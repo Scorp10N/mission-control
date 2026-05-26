@@ -5,6 +5,7 @@ import { eventBus } from './event-bus'
 import { logger } from './logger'
 import { config } from './config'
 import { syncTaskOutbound } from './github-sync-engine'
+import { routePolicy, type PolicyRouteRequest } from './policy-router'
 
 /** Sync task to GitHub/GNAP and broadcast escalation if task failed */
 function syncAndEscalateIfFailed(task: { id: number; title: string; status: string; priority: string; project_id?: number | null; workspace_id: number; description?: string | null }, newStatus: string, errorMsg?: string, dispatchAttempts?: number): void {
@@ -57,6 +58,26 @@ export function resolveTaskDispatchModelOverride(task: Pick<DispatchableTask, 'a
     } catch { /* ignore */ }
   }
   return null
+}
+
+export function buildPolicyRequestFromTask(
+  task: Pick<DispatchableTask, 'id' | 'title' | 'description' | 'workspace_id'> & { assigned_to: string | null; tags?: string[] },
+  taskMeta: Record<string, unknown>,
+  tools: string[],
+): PolicyRouteRequest {
+  const maxUsd = typeof taskMeta.maxCostUsd === 'number' ? taskMeta.maxCostUsd : null
+  const estimatedUsd = typeof taskMeta.estimatedCostUsd === 'number' ? taskMeta.estimatedCostUsd : null
+  return {
+    taskId: String(task.id),
+    title: task.title,
+    description: task.description ?? null,
+    tags: Array.isArray(task.tags) ? task.tags : [],
+    metadata: taskMeta,
+    budget: maxUsd !== null || estimatedUsd !== null ? { maxUsd, estimatedUsd } : null,
+    tools,
+    requestedAgent: task.assigned_to,
+    workspaceId: String(task.workspace_id),
+  }
 }
 
 /** Extract the gateway agent identifier from the agent's config JSON.
@@ -652,6 +673,47 @@ export async function dispatchAssignedTasks(): Promise<{ ok: boolean; message: s
   const now = Math.floor(Date.now() / 1000)
 
   for (const task of tasks) {
+    // Read task metadata early — needed for policy check and session dispatch
+    const taskMeta = (() => {
+      try {
+        const row = db.prepare('SELECT metadata FROM tasks WHERE id = ?').get(task.id) as { metadata: string } | undefined
+        return row?.metadata ? (JSON.parse(row.metadata) as Record<string, unknown>) : {} as Record<string, unknown>
+      } catch { return {} as Record<string, unknown> }
+    })()
+
+    const toolsFromMeta: string[] = Array.isArray(taskMeta.tools) ? (taskMeta.tools as string[]) : []
+    const policyDecision = await routePolicy(buildPolicyRequestFromTask(task, taskMeta, toolsFromMeta))
+
+    db_helpers.logActivity(
+      'policy_route_decision',
+      'task',
+      task.id,
+      'policy-router',
+      `Policy: ${policyDecision.action} for "${task.title}" — ${policyDecision.reason}`,
+      { action: policyDecision.action, reason: policyDecision.reason, severity: policyDecision.audit.severity, target: policyDecision.target ?? null },
+      task.workspace_id
+    )
+
+    if (policyDecision.action === 'reject') {
+      db.prepare('UPDATE tasks SET status = ?, error_message = ?, updated_at = ? WHERE id = ?')
+        .run('assigned', `Policy rejected: ${policyDecision.reason}`, now, task.id)
+      results.push({ id: task.id, success: false, error: `Policy rejected: ${policyDecision.reason}` })
+      continue
+    }
+
+    if (policyDecision.action === 'approval_required') {
+      db.prepare('UPDATE tasks SET status = ?, error_message = ?, updated_at = ? WHERE id = ?')
+        .run('assigned', `Awaiting approval: ${policyDecision.reason}`, now, task.id)
+      results.push({ id: task.id, success: false, error: `Approval required: ${policyDecision.reason}` })
+      continue
+    }
+
+    // If policy redirected to a different agent, update task reference
+    if (policyDecision.target && policyDecision.target !== task.assigned_to) {
+      task.assigned_to = policyDecision.target
+      task.agent_name = policyDecision.target
+    }
+
     // Mark as in_progress immediately to prevent re-dispatch
     db.prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?')
       .run('in_progress', now, task.id)
@@ -684,13 +746,7 @@ export async function dispatchAssignedTasks(): Promise<{ ok: boolean; message: s
       const prompt = buildTaskPrompt(task, rejectionFeedback)
 
       // Check if task has a target session specified in metadata
-      const taskMeta = (() => {
-        try {
-          const row = db.prepare('SELECT metadata FROM tasks WHERE id = ?').get(task.id) as { metadata: string } | undefined
-          return row?.metadata ? JSON.parse(row.metadata) : {}
-        } catch { return {} }
-      })()
-      const targetSession: string | null = typeof taskMeta?.target_session === 'string' && taskMeta.target_session
+      const targetSession: string | null = typeof taskMeta.target_session === 'string' && taskMeta.target_session
         ? taskMeta.target_session
         : null
 
@@ -763,12 +819,7 @@ export async function dispatchAssignedTasks(): Promise<{ ok: boolean; message: s
         : agentResponse.text
 
       // Merge dispatch_session_id into existing metadata
-      const existingMeta = (() => {
-        try {
-          const row = db.prepare('SELECT metadata FROM tasks WHERE id = ?').get(task.id) as { metadata: string } | undefined
-          return row?.metadata ? JSON.parse(row.metadata) : {}
-        } catch { return {} }
-      })()
+      const existingMeta = { ...taskMeta }
       if (agentResponse.sessionId) {
         existingMeta.dispatch_session_id = agentResponse.sessionId
       }

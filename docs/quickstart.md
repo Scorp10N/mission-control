@@ -230,6 +230,7 @@ Set `MC_URL` and `MC_API_KEY` in your environment. The MCP server exposes 35+ to
 
 - **[Agent Setup Guide](agent-setup.md)** — Configure SOUL personalities, agent sources, and heartbeat settings
 - **[Orchestration Patterns](orchestration.md)** — Multi-agent workflows, auto-dispatch, quality review gates
+- **[Agent Coordination](agent-coordination.md)** — Shared task, comment, comms, and MCP workflow
 - **[CLI Reference](cli-agent-control.md)** — Full CLI command reference
 - **[CLI Integration](cli-integration.md)** — Direct CLI and gateway-free connections
 - **[Deployment Guide](deployment.md)** — Production deployment options

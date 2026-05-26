@@ -339,4 +339,5 @@ Templates define model tier, tool permissions, and default configuration. Availa
 
 - **[Quickstart](quickstart.md)** — 5-minute first agent tutorial
 - **[Orchestration Patterns](orchestration.md)** — Multi-agent workflows, auto-dispatch, quality review
+- **[Agent Coordination](agent-coordination.md)** — Shared task, comment, comms, and MCP workflow
 - **[CLI Reference](cli-agent-control.md)** — Full CLI command reference

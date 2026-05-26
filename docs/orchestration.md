@@ -331,5 +331,6 @@ Events include: `task.created`, `task.updated`, `task.completed`, `agent.created
 
 - **[Quickstart](quickstart.md)** — 5-minute first agent tutorial
 - **[Agent Setup](agent-setup.md)** — Registration, SOUL, configuration
+- **[Agent Coordination](agent-coordination.md)** — Shared handoffs across Codex, Claude, Hermes, and local agents
 - **[CLI Reference](cli-agent-control.md)** — Full CLI command list
 - **[CLI Integration](cli-integration.md)** — Direct connections without a gateway

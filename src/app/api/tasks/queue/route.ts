@@ -3,6 +3,7 @@ import { getDatabase } from '@/lib/db'
 import { requireRole } from '@/lib/auth'
 import { agentTaskLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
+import { routePolicy } from '@/lib/policy-router'
 
 type QueueReason = 'continue_current' | 'assigned' | 'at_capacity' | 'no_tasks_available'
 
@@ -121,6 +122,35 @@ export async function GET(request: NextRequest) {
     `).get(agent, now, workspaceId, agent) as any | undefined
 
     if (claimed) {
+      const claimedTags = safeParseJson<string[]>(claimed.tags, [])
+      const claimedMeta = safeParseJson<Record<string, unknown>>(claimed.metadata, {})
+
+      const policyDecision = await routePolicy({
+        taskId: String(claimed.id),
+        title: claimed.title,
+        description: claimed.description ?? null,
+        tags: claimedTags,
+        metadata: claimedMeta,
+        budget: null,
+        tools: Array.isArray(claimedMeta.tools) ? (claimedMeta.tools as string[]) : [],
+        requestedAgent: agent,
+        workspaceId: String(workspaceId),
+      })
+
+      if (policyDecision.action === 'reject') {
+        // Revert the claim — policy blocked this agent from taking the task
+        db.prepare(
+          'UPDATE tasks SET status = ?, assigned_to = ?, error_message = ?, updated_at = ? WHERE id = ?'
+        ).run('assigned', claimed.assigned_to ?? null, `Policy rejected queue claim: ${policyDecision.reason}`, now, claimed.id)
+        logger.warn({ taskId: claimed.id, agent, reason: policyDecision.reason }, 'Policy blocked queue task claim')
+        return NextResponse.json({
+          task: null,
+          reason: 'no_tasks_available' as QueueReason,
+          agent,
+          timestamp: now,
+        })
+      }
+
       return NextResponse.json({
         task: mapTaskRow(claimed),
         reason: 'assigned' as QueueReason,

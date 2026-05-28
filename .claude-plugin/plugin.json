@@ -1,0 +1,17 @@
+{
+  "name": "mission-control",
+  "version": "1.0.0",
+  "description": "Mission Control integration — session presence, heartbeat, and task queue for any agent",
+  "author": {
+    "name": "Yarin",
+    "url": "https://github.com/Scorp10N"
+  },
+  "skills": ["../skills/mission-control/"],
+  "hooks": "hooks/hooks.json",
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(~/.agents/hooks/mission-control-copilot.sh:*)"
+    ]
+  }
+}

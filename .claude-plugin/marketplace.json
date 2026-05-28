@@ -1,0 +1,11 @@
+{
+  "name": "mission-control",
+  "description": "Mission Control integration for local agent orchestration",
+  "plugins": [
+    {
+      "name": "mission-control",
+      "path": ".",
+      "description": "Session presence, heartbeat, and task queue integration"
+    }
+  ]
+}

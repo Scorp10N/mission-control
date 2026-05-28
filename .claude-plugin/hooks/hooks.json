@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "MC_AGENT_NAME=\"${MC_AGENT_NAME:-copilot-cli}\" \"$HOME/.agents/hooks/mission-control-copilot.sh\" start >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "MC_AGENT_NAME=\"${MC_AGENT_NAME:-copilot-cli}\" \"$HOME/.agents/hooks/mission-control-copilot.sh\" stop >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ]
+  }
+}

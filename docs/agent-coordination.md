@@ -153,7 +153,7 @@ The queue endpoint atomically moves the next eligible `assigned` or unassigned `
 
 Current local agent paths:
 
-- `codex`: heartbeat keeps it online/idle; pickup is manual via `~/.codex/hooks/mission-control-codex.sh queue` or `mc tasks queue --agent codex`; it does not auto-execute assigned tasks yet.
+- `codex`: heartbeat keeps it online/idle and now polls the queue on its timer via `~/.codex/hooks/mission-control-codex.sh` or `mc tasks queue --agent codex`; it still does not auto-execute assigned tasks on its own.
 - `hermes`: local-agent/API reporting path; requires its own runtime loop to poll assignments or queue and report updates.
 - `pi`: intended local-agent/API reporting path like Hermes; no pickup occurs while the agent is offline.
 - `claude-code`: session hooks provide heartbeat/liveness; task execution depends on an active Claude session or a working dispatch target.

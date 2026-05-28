@@ -384,4 +384,5 @@ Once deployed, set up your agents and orchestration:
 - **[Quickstart](quickstart.md)** — Register your first agent and complete a task in 5 minutes
 - **[Agent Setup](agent-setup.md)** — SOUL personalities, heartbeats, config sync, agent sources
 - **[Orchestration Patterns](orchestration.md)** — Auto-dispatch, quality review, multi-agent workflows
+- **[Agent Coordination](agent-coordination.md)** — Shared task, comment, comms, and MCP workflow
 - **[CLI Reference](cli-agent-control.md)** — Full CLI command list for headless/scripted usage

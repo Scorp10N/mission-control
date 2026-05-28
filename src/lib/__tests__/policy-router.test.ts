@@ -131,13 +131,92 @@ describe('routePolicy', () => {
       workspaceId: 'workspace-main',
     })
 
-    expect(decision).toEqual({
+    expect(decision).toMatchObject({
       action: 'allow',
       target: 'local-codex',
       reason: 'Task stays within local execution policy.',
       audit: {
         eventType: 'policy_route_decision',
         severity: 'info',
+      },
+    })
+  })
+
+  it('recommends Codex and a Bifrost Codex model for terminal automation', async () => {
+    const decision = await routePolicy({
+      taskId: 'task-terminal',
+      title: 'Fix failing CI shell script',
+      description: 'Inspect git diff, run terminal commands, and update the workflow script',
+      tags: ['ci', 'shell', 'automation'],
+      metadata: { privacyClass: 'cloud_ok', domain: 'terminal', quality: 'standard', urgency: 'normal' },
+      budget: { maxUsd: 1 },
+      tools: ['repo.read'],
+      requestedAgent: null,
+      workspaceId: 'workspace-main',
+    })
+
+    expect(decision).toMatchObject({
+      action: 'allow',
+      target: 'codex',
+      recommendation: {
+        agent: 'codex',
+        model: 'openai-codex/gpt-5.5',
+        provider: 'bifrost',
+        endpoint: 'http://localhost:8080/v1',
+        confidence: 'high',
+      },
+    })
+    expect(decision.recommendation?.reason).toContain('terminal')
+  })
+
+  it('recommends Hermes and a local model for local-only reasoning', async () => {
+    const decision = await routePolicy({
+      taskId: 'task-local-reasoning',
+      title: 'Summarize private household notes',
+      description: 'Use only local reasoning for this private planning task',
+      tags: ['research'],
+      metadata: { privacyClass: 'local_only', domain: 'research', quality: 'standard' },
+      budget: { maxUsd: 0 },
+      tools: ['repo.read'],
+      requestedAgent: null,
+      workspaceId: 'workspace-main',
+    })
+
+    expect(decision).toMatchObject({
+      action: 'allow',
+      target: 'hermes',
+      recommendation: {
+        agent: 'hermes',
+        model: 'llama3.2',
+        provider: 'local',
+        endpoint: 'http://localhost:11434/v1',
+        confidence: 'high',
+      },
+    })
+  })
+
+  it('recommends Claude Code for expert architecture work', async () => {
+    const decision = await routePolicy({
+      taskId: 'task-architecture',
+      title: 'Review complex security architecture',
+      description: 'Expert review for a multi-agent dispatch architecture',
+      tags: ['architecture', 'security'],
+      metadata: { privacyClass: 'cloud_ok', domain: 'security', quality: 'expert', urgency: 'normal' },
+      budget: { maxUsd: 5 },
+      tools: ['repo.read'],
+      requestedAgent: null,
+      workspaceId: 'workspace-main',
+    })
+
+    expect(decision).toMatchObject({
+      action: 'allow',
+      target: 'claude-code',
+      recommendation: {
+        agent: 'claude-code',
+        model: 'anthropic/claude-opus-4-7',
+        provider: 'bifrost',
+        endpoint: 'http://localhost:8080/v1',
+        confidence: 'high',
       },
     })
   })

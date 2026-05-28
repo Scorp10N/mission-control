@@ -1428,6 +1428,15 @@ const migrations: Migration[] = [
       db.exec(`ALTER TABLE mcp_call_log ADD COLUMN signature TEXT DEFAULT NULL`)
       db.exec(`ALTER TABLE mcp_call_log ADD COLUMN public_key TEXT DEFAULT NULL`)
     }
+  },
+  {
+    id: '051_tasks_parent_id',
+    up(db: Database.Database) {
+      db.exec(`
+        ALTER TABLE tasks ADD COLUMN parent_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL;
+        CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON tasks(parent_id);
+      `)
+    }
   }
 ]
 

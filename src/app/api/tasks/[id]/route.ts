@@ -73,8 +73,15 @@ export async function GET(
     
     // Parse JSON fields
     const taskWithParsedData = mapTaskRow(task);
-    
-    return NextResponse.json({ task: taskWithParsedData });
+
+    // Fetch subtasks (tasks with this task as their parent)
+    const subtasks = db.prepare(`
+      SELECT id, title, status, assigned_to FROM tasks
+      WHERE parent_id = ? AND workspace_id = ?
+      ORDER BY id ASC
+    `).all(taskId, workspaceId) as Array<{ id: number; title: string; status: string; assigned_to: string | null }>;
+
+    return NextResponse.json({ task: { ...taskWithParsedData, subtasks } });
   } catch (error) {
     logger.error({ err: error }, 'GET /api/tasks/[id] error');
     return NextResponse.json({ error: 'Failed to fetch task' }, { status: 500 });

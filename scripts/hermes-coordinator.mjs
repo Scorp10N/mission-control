@@ -6,7 +6,7 @@ import { execSync } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 
 const TASK_IDS = [27, 28, 29, 30, 31, 32, 33, 34, 35]
-const POLL_INTERVAL = 30000 // 30 seconds
+const POLL_INTERVAL = 180000 // 3 minutes
 const STALL_THRESHOLD = 20 * 60 * 1000 // 20 minutes
 
 const state = new Map()
@@ -139,7 +139,7 @@ async function poll() {
 async function main() {
   console.log('\n🚀 Hermes Coordinator starting')
   console.log(`   Monitoring ${TASK_IDS.length} tasks`)
-  console.log(`   Poll interval: 30 seconds`)
+  console.log(`   Poll interval: ${POLL_INTERVAL / 1000} seconds`)
   console.log(`   Using: mc CLI for task queries`)
   console.log(`   Press Ctrl+C to stop\n`)
 

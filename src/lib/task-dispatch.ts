@@ -6,6 +6,7 @@ import { logger } from './logger'
 import { config } from './config'
 import { syncTaskOutbound } from './github-sync-engine'
 import { routePolicy, type PolicyRouteRequest } from './policy-router'
+import { isAgentOverLimit, limitUsagePercent } from './agent-limits'
 
 /** Sync task to GitHub/GNAP and broadcast escalation if task failed */
 function syncAndEscalateIfFailed(task: { id: number; title: string; status: string; priority: string; project_id?: number | null; workspace_id: number; description?: string | null }, newStatus: string, errorMsg?: string, dispatchAttempts?: number): void {
@@ -641,6 +642,29 @@ export async function requeueStaleTasks(): Promise<{ ok: boolean; message: strin
   }
 }
 
+/**
+ * Check if a single task can be dispatched (limit gate only).
+ * Returns null if ok, or an error object if the agent is over its weekly cap.
+ * Exported for unit testing of the limit enforcement path.
+ */
+export async function dispatchToAgent(
+  task: { id: number; title: string; assigned_to?: string | null; workspace_id: number }
+): Promise<{ error: string } | null> {
+  if (!task.assigned_to) return null
+  const db = getDatabase()
+  if (isAgentOverLimit(db, task.assigned_to, task.workspace_id)) {
+    const percent = Math.round(limitUsagePercent(db, task.assigned_to, task.workspace_id))
+    eventBus.broadcast('agent.limit_reached', {
+      agent: task.assigned_to,
+      task_id: task.id,
+      workspace_id: task.workspace_id,
+      percent,
+    })
+    return { error: `Agent ${task.assigned_to} has reached its weekly usage limit` }
+  }
+  return null
+}
+
 export async function dispatchAssignedTasks(): Promise<{ ok: boolean; message: string }> {
   const db = getDatabase()
 
@@ -673,6 +697,20 @@ export async function dispatchAssignedTasks(): Promise<{ ok: boolean; message: s
   const now = Math.floor(Date.now() / 1000)
 
   for (const task of tasks) {
+    // Check weekly cost cap before dispatching
+    if (task.assigned_to && isAgentOverLimit(db, task.assigned_to, task.workspace_id)) {
+      const percent = Math.round(limitUsagePercent(db, task.assigned_to, task.workspace_id))
+      logger.warn({ agent: task.assigned_to, taskId: task.id }, 'Dispatch blocked — weekly limit reached')
+      eventBus.broadcast('agent.limit_reached', {
+        agent: task.assigned_to,
+        task_id: task.id,
+        workspace_id: task.workspace_id,
+        percent,
+      })
+      results.push({ id: task.id, success: false, error: `Agent ${task.assigned_to} has reached its weekly usage limit` })
+      continue
+    }
+
     // Read task metadata early — needed for policy check and session dispatch
     const taskMeta = (() => {
       try {

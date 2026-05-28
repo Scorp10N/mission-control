@@ -27,6 +27,7 @@ export type EventType =
   | 'agent.deleted'
   | 'agent.synced'
   | 'agent.status_changed'
+  | 'agent.limit_reached'
   | 'audit.security'
   | 'security.event'
   | 'connection.created'

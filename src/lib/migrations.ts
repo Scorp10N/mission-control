@@ -1430,6 +1430,25 @@ const migrations: Migration[] = [
     }
   },
   {
+    id: '053_agent_limits',
+    up(db: Database.Database) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS agent_limits (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          agent_name TEXT NOT NULL,
+          weekly_token_limit INTEGER,
+          weekly_usd_limit REAL,
+          workspace_id INTEGER NOT NULL DEFAULT 1,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          UNIQUE(agent_name, workspace_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_limits_agent
+          ON agent_limits(agent_name, workspace_id);
+      `)
+    }
+  },
+  {
     id: '052_task_dependencies',
     up(db: Database.Database) {
       db.exec(`

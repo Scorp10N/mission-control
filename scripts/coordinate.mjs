@@ -76,7 +76,10 @@ async function pollUntilDone(taskIds) {
   const deadline = Date.now() + TIMEOUT_MS
 
   while (Date.now() < deadline) {
-    const statuses = await Promise.all(taskIds.map(getTaskStatus))
+    const settled = await Promise.allSettled(taskIds.map(getTaskStatus))
+    const statuses = settled.map((r, i) =>
+      r.status === 'fulfilled' ? r.value : { id: taskIds[i], status: 'failed', title: 'unknown', resolution: r.reason?.message }
+    )
     const pending = statuses.filter(s => !terminal.has(s.status))
     console.log(`  Progress: ${taskIds.length - pending.length}/${taskIds.length} done`)
     if (pending.length === 0) return statuses
@@ -152,5 +155,6 @@ async function coordinate(goal) {
   console.log(`\n Parent TASK-${String(parentId).padStart(3, '0')} moved to review.`)
 }
 
-const goal = process.argv.slice(2).join(' ') || 'Evaluate Downdog extension voice command feasibility'
+const goal = process.argv.slice(2).join(' ')
+if (!goal) { console.error('Usage: node scripts/coordinate.mjs "your goal here"'); process.exit(1) }
 coordinate(goal).catch(err => { console.error(err.message); process.exit(1) })

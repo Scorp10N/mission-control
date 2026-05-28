@@ -5,6 +5,7 @@ import { validateBody, qualityReviewSchema } from '@/lib/validation'
 import { mutationLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
 import { eventBus } from '@/lib/event-bus'
+import { extractVerificationSignals, meetsApprovalThreshold } from '@/lib/aegis-verifier'
 
 export async function GET(request: NextRequest) {
   const auth = requireRole(request, 'viewer')
@@ -83,10 +84,21 @@ export async function POST(request: NextRequest) {
     const workspaceId = auth.user.workspace_id ?? 1;
 
     const task = db
-      .prepare('SELECT id, title FROM tasks WHERE id = ? AND workspace_id = ?')
+      .prepare('SELECT id, title, resolution FROM tasks WHERE id = ? AND workspace_id = ?')
       .get(taskId, workspaceId) as any
     if (!task) {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 })
+    }
+
+    // Aegis auto-approval gate: require machine-checkable signals
+    if (reviewer === 'aegis' && status === 'approved') {
+      const signals = extractVerificationSignals((task.resolution ?? '') + ' ' + (notes ?? ''))
+      if (!meetsApprovalThreshold(signals)) {
+        return NextResponse.json({
+          error: 'Aegis auto-approval requires: test pass, typecheck pass, no innerHTML in resolution',
+          signals,
+        }, { status: 422 })
+      }
     }
 
     const result = db.prepare(`

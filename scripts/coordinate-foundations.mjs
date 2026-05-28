@@ -53,22 +53,22 @@ async function run() {
   const a1 = taskId(await mc.createTask({
     title: 'MC: add agent_limits table migration',
     description: `Plan: ${PLAN} — Task A-1\nCHECKPOINT: agent_limits table exists, pnpm test src/lib/__tests__/agent-limits.test.ts passes.`,
-    assigned_to: 'codex', priority: 'urgent',
+    assigned_to: 'codex', priority: 'high',
   }))
   const a2 = taskId(await mc.createTask({
     title: 'MC: implement agent-limits.ts weekly enforcement',
     description: `Plan: ${PLAN} — Task A-2\nDepends on A-1 (TASK-${a1}).\nCHECKPOINT: isAgentOverLimit, getWeeklyUsage, setAgentLimit all tested and passing.`,
-    assigned_to: 'codex', priority: 'urgent',
+    assigned_to: 'codex', priority: 'high',
   }))
   const a3 = taskId(await mc.createTask({
     title: 'MC: add /api/limits and /api/limits/usage endpoints',
     description: `Plan: ${PLAN} — Task A-3\nDepends on A-2 (TASK-${a2}).\nCHECKPOINT: mc raw --method GET --path /api/limits returns {"limits":[]}.`,
-    assigned_to: 'codex', priority: 'urgent',
+    assigned_to: 'codex', priority: 'high',
   }))
   const a4 = taskId(await mc.createTask({
     title: 'MC: enforce weekly cost cap in task dispatch',
     description: `Plan: ${PLAN} — Task A-4\nDepends on A-3 (TASK-${a3}).\nCHECKPOINT: dispatch blocked + agent.limit_reached event emitted when over cap.`,
-    assigned_to: 'codex', priority: 'urgent',
+    assigned_to: 'codex', priority: 'high',
   }))
 
   // Track B — dependencies

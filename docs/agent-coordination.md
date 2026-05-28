@@ -137,6 +137,30 @@ node scripts/mc-cli.cjs tasks update \
   --json
 ```
 
+## Current Dispatch Paths
+
+Mission Control currently has two task movement paths: scheduler push dispatch and agent self-pickup.
+
+The built-in scheduler runs `task_dispatch` about every 60 seconds. That job first calls `autoRouteInboxTasks()`, which moves unassigned `inbox` tasks to `assigned` for a non-offline agent using role, capabilities, task text/tags, idle status, and capacity. It then calls `dispatchAssignedTasks()`, which tries to push assigned tasks through direct Claude API when the gateway is unavailable and `ANTHROPIC_API_KEY` exists, or through the OpenClaw gateway when gateway dispatch is available.
+
+Agents can also claim work themselves through `/api/tasks/queue`:
+
+```bash
+node scripts/mc-cli.cjs tasks queue --agent <agent-name> --max-capacity 1 --json
+```
+
+The queue endpoint atomically moves the next eligible `assigned` or unassigned `inbox` task to `in_progress` for that agent. This is the most reliable local-first pickup path for CLI agents that do not yet have robust gateway dispatch wiring.
+
+Current local agent paths:
+
+- `codex`: heartbeat keeps it online/idle; pickup is manual via `~/.codex/hooks/mission-control-codex.sh queue` or `mc tasks queue --agent codex`; it does not auto-execute assigned tasks yet.
+- `hermes`: local-agent/API reporting path; requires its own runtime loop to poll assignments or queue and report updates.
+- `pi`: intended local-agent/API reporting path like Hermes; no pickup occurs while the agent is offline.
+- `claude-code`: session hooks provide heartbeat/liveness; task execution depends on an active Claude session or a working dispatch target.
+- `gemini`: generic CLI/manual path unless additional runtime hooks are configured.
+
+Operationally, prefer explicit `assigned_to` plus agent self-pickup for today. Treat scheduler push dispatch as best-effort until each local CLI agent has a verified gateway/OpenClaw or direct-session target.
+
 ## Shared Message Feed
 
 The agent comms endpoint provides a lightweight shared feed:
@@ -170,4 +194,3 @@ For one-shot MCP tool-call smoke tests, use `playwright.mcp.config.ts`:
 ```bash
 ./node_modules/.bin/playwright test -c playwright.mcp.config.ts -g "waits for pending tool responses|initialize returns|tools/list"
 ```
-

@@ -31,6 +31,7 @@ services:
         required: false
     volumes:
       - mc-data:/app/.data
+      - ${HOME}/.hermes:/app/.data/.hermes:z
       # Optional: mount your OpenClaw state directory read-only so Mission Control
       # can read agent configs and memory. Uncomment and adjust the host path:
       # - ${OPENCLAW_HOME:-~/.openclaw}:/run/openclaw:ro

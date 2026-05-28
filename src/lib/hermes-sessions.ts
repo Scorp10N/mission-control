@@ -6,7 +6,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import Database from 'better-sqlite3'
 import { config } from './config'
@@ -43,12 +43,22 @@ interface HermesSessionRow {
   title: string | null
 }
 
+function getHermesHome(): string {
+  const dataDir = resolve(config.dataDir || '.data')
+  const homeDir = config.homeDir || ''
+  return existsSync(join(dataDir, '.hermes'))
+    ? join(dataDir, '.hermes')
+    : existsSync(join(homeDir, '.hermes'))
+      ? join(homeDir, '.hermes')
+      : join(dataDir, '.hermes')
+}
+
 function getHermesDbPath(): string {
-  return join(config.homeDir, '.hermes', 'state.db')
+  return join(getHermesHome(), 'state.db')
 }
 
 function getHermesPidPath(): string {
-  return join(config.homeDir, '.hermes', 'gateway.pid')
+  return join(getHermesHome(), 'gateway.pid')
 }
 
 let hermesBinaryCache: { checkedAt: number; installed: boolean } | null = null
@@ -61,7 +71,7 @@ function hasHermesCliBinary(): boolean {
 
   // Check common install locations including the data directory's local bin.
   // In Docker, HOME=/nonexistent so we also check dataDir as effective HOME.
-  const dataDir = require('node:path').resolve(config.dataDir || '.data')
+  const dataDir = resolve(config.dataDir || '.data')
   const homeDir = config.homeDir || process.env.HOME || ''
   const candidates = [
     process.env.HERMES_BIN,
@@ -101,8 +111,13 @@ export function clearHermesDetectionCache(): void {
 }
 
 export function isHermesInstalled(): boolean {
-  // Strict detection: show Hermes UI only when Hermes CLI is actually installed on this system.
-  return hasHermesCliBinary()
+  const dataDir = resolve(config.dataDir || '.data')
+  const homeDir = config.homeDir || ''
+  return (
+    existsSync(join(dataDir, '.hermes')) ||
+    existsSync(join(homeDir, '.hermes')) ||
+    hasHermesCliBinary()
+  )
 }
 
 function parseGatewayPid(raw: string): number | null {
@@ -138,9 +153,23 @@ export function isHermesGatewayRunning(): boolean {
     const pidStr = readFileSync(pidPath, 'utf8')
     const pid = parseGatewayPid(pidStr)
     if (!pid) return false
-    // Check if process exists (signal 0 doesn't kill, just checks)
-    process.kill(pid, 0)
-    return true
+    
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch (err: any) {
+      if (err.code === 'EPERM') return true
+      if (err.code === 'ESRCH') {
+        const statePath = join(getHermesHome(), 'gateway_state.json')
+        if (existsSync(statePath)) {
+          const stateData = JSON.parse(readFileSync(statePath, 'utf8'))
+          if (stateData?.gateway_state === 'running') {
+            return true
+          }
+        }
+      }
+    }
+    return false
   } catch {
     return false
   }

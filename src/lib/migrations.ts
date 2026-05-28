@@ -1430,6 +1430,23 @@ const migrations: Migration[] = [
     }
   },
   {
+    id: '052_task_dependencies',
+    up(db: Database.Database) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS task_dependencies (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+          depends_on_task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+          workspace_id INTEGER NOT NULL DEFAULT 1,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          UNIQUE(task_id, depends_on_task_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id);
+        CREATE INDEX IF NOT EXISTS idx_task_deps_depends ON task_dependencies(depends_on_task_id);
+      `)
+    }
+  },
+  {
     id: '051_tasks_parent_id',
     up(db: Database.Database) {
       db.exec(`

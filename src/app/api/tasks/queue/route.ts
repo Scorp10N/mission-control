@@ -4,6 +4,7 @@ import { requireRole } from '@/lib/auth'
 import { agentTaskLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
 import { routePolicy } from '@/lib/policy-router'
+import { hasUnresolvedDeps } from '@/lib/task-dependencies'
 
 type QueueReason = 'continue_current' | 'assigned' | 'at_capacity' | 'no_tasks_available'
 
@@ -107,14 +108,20 @@ export async function GET(request: NextRequest) {
     }
 
     // Atomic claim: single UPDATE with subquery to eliminate SELECT-UPDATE race condition.
+    // Excludes tasks that have unresolved dependencies (all deps must be 'done').
     const claimed = db.prepare(`
       UPDATE tasks
       SET status = 'in_progress', assigned_to = ?, updated_at = ?
       WHERE id = (
-        SELECT id FROM tasks
-        WHERE workspace_id = ?
-          AND status IN ('assigned', 'inbox')
-          AND (assigned_to IS NULL OR assigned_to = ?)
+        SELECT id FROM tasks t
+        WHERE t.workspace_id = ?
+          AND t.status IN ('assigned', 'inbox')
+          AND (t.assigned_to IS NULL OR t.assigned_to = ?)
+          AND t.id NOT IN (
+            SELECT td.task_id FROM task_dependencies td
+            JOIN tasks dep ON dep.id = td.depends_on_task_id
+            WHERE td.workspace_id = t.workspace_id AND dep.status != 'done'
+          )
         ORDER BY ${priorityRankSql()} ASC, due_date ASC NULLS LAST, created_at ASC
         LIMIT 1
       )

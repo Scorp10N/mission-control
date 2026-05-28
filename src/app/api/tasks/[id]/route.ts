@@ -10,6 +10,7 @@ import { normalizeTaskUpdateStatus } from '@/lib/task-status';
 import { syncTaskOutbound } from '@/lib/github-sync-engine';
 import { removeTaskFromGnap } from '@/lib/gnap-sync';
 import { config } from '@/lib/config';
+import { getDependsOn, getBlockedBy } from '@/lib/task-dependencies';
 
 function formatTicketRef(prefix?: string | null, num?: number | null): string | undefined {
   if (!prefix || typeof num !== 'number' || !Number.isFinite(num) || num <= 0) return undefined
@@ -81,7 +82,11 @@ export async function GET(
       ORDER BY id ASC
     `).all(taskId, workspaceId) as Array<{ id: number; title: string; status: string; assigned_to: string | null }>;
 
-    return NextResponse.json({ task: { ...taskWithParsedData, subtasks } });
+    // Fetch dependency relationships
+    const dependsOn = getDependsOn(db, taskId, workspaceId);
+    const blockedBy = getBlockedBy(db, taskId, workspaceId);
+
+    return NextResponse.json({ task: { ...taskWithParsedData, subtasks, depends_on: dependsOn, blocked_by: blockedBy } });
   } catch (error) {
     logger.error({ err: error }, 'GET /api/tasks/[id] error');
     return NextResponse.json({ error: 'Failed to fetch task' }, { status: 500 });

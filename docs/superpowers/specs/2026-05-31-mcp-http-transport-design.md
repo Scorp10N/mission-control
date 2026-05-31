@@ -1,8 +1,9 @@
 # MCP HTTP Transport for Mission Control
 
 **Date:** 2026-05-31  
-**Status:** Approved  
+**Status:** Approved (post the-fool review)  
 **Task:** [#58](http://127.0.0.1:3001) — MCP HTTP/SSE transport — expose mc-mcp-server via container port  
+**Review:** the-fool pre-mortem applied 2026-05-31 — 5 issues found and resolved (SDK version, tool drift, CORS note, test wording, db.ts async note)
 
 ---
 
@@ -133,8 +134,11 @@ export function buildMcpTools(server: McpServer, role: 'viewer' | 'operator' | '
 
 **`package.json`** — add dependency:
 ```json
-"@modelcontextprotocol/sdk": "^1.x"
+"@modelcontextprotocol/sdk": "^1.9.0"
 ```
+
+> **Note:** `StreamableHTTPServerTransport` was introduced in SDK v1.9+ alongside MCP spec 2025-03-26.  
+> Import paths: `@modelcontextprotocol/sdk/server/mcp.js` and `@modelcontextprotocol/sdk/server/streamableHttp.js` — verify against installed version's `exports` field if build fails.
 
 ### Unchanged
 
@@ -165,6 +169,17 @@ Tools for higher roles are **never registered** in the MCP manifest for a lower-
 | Mutating non-existent resource | Handlers check existence first, return structured "not found" content, never throw |
 | Double-submit / duplicate | Ops designed idempotent — updating an already-updated task is a no-op |
 | Unauthenticated access | Auth resolves before McpServer is instantiated — server object never created for invalid key |
+| `await` on synchronous `db.ts` calls | All `db.ts` functions are synchronous (better-sqlite3) — handlers are async by convention only; `await nonPromise` is a no-op, not a bug |
+
+---
+
+## Tool Registry Sync Risk
+
+`mcp-tools.ts` and `mc-mcp-server.cjs` independently define the same 56 tools. They can drift silently when tools are added to the stdio server.
+
+**Mitigation:** Unit test asserts `buildMcpTools(server, 'admin')` registers the same tool names as the tool list exported from `mc-mcp-server.cjs`. Alternatively, extract a shared `TOOL_NAMES` constant imported by both.
+
+**Until a sync test exists:** treat `mcp-tools.ts` as the authoritative source for the HTTP endpoint, and `mc-mcp-server.cjs` as authoritative for the stdio path. New tools must be added to both.
 
 ---
 
@@ -180,7 +195,7 @@ Tools for higher roles are **never registered** in the MCP manifest for a lower-
 - `POST /api/mcp` no key → 401
 - `POST /api/mcp` viewer key + `tools/list` → only read tools in manifest
 - `POST /api/mcp` operator key + `tools/call mc_tasks_create` → task created
-- `POST /api/mcp` viewer key + `tools/call mc_tasks_create` → method not found (by design, not error)
+- `POST /api/mcp` viewer key + `tools/call mc_tasks_create` → MCP "Tool not found" error (by design — tool not registered in manifest, not a JSON-RPC method error)
 
 **Smoke test**: `claude mcp add mission-control -- <url>` → `mc_tasks_list` in Claude Code session → result returned.
 
@@ -197,6 +212,8 @@ Tools for higher roles are **never registered** in the MCP manifest for a lower-
 ---
 
 ## Agent Config Examples
+
+> **Network note:** All agent clients listed below are CLI-based. CORS headers are not required for CLI → server HTTP calls. If a browser-based MCP client is added in future, `Access-Control-Allow-Origin` headers must be added to `route.ts`.
 
 **Claude Code** (`~/.claude/settings.json`):
 ```json

@@ -128,14 +128,24 @@ function dedupeTokenRecords(records: TokenUsageRecord[]): TokenUsageRecord[] {
   const deduped: TokenUsageRecord[] = []
 
   for (const record of records) {
+    // A single POST persists the same usage to BOTH the JSON file and the
+    // token_usage table, so the dedup key must match across those two
+    // representations of one event. Two fields legitimately differ between them
+    // and are therefore EXCLUDED from the key:
+    //   - timestamp: JSON keeps full-precision ms (Date.now()); the DB stores
+    //     created_at in seconds and reads it back as created_at*1000. Normalize
+    //     to whole seconds so both collide.
+    //   - operation: the token_usage table has no operation column, so the DB
+    //     loader hardcodes 'heartbeat' while the JSON record keeps the real
+    //     value (e.g. 'chat_completion'). Excluded entirely.
+    // Without these adjustments every posted record was double-counted.
     const key = [
       record.sessionId,
       record.model,
-      record.timestamp,
+      Math.floor(Number(record.timestamp) / 1000),
       record.inputTokens,
       record.outputTokens,
       record.totalTokens,
-      record.operation,
       record.taskId ?? '',
       record.workspaceId ?? 1,
       record.duration ?? '',
@@ -607,6 +617,33 @@ export async function POST(request: NextRequest) {
     }
 
     await saveTokenData(existingData)
+
+    // Also INSERT into the token_usage SQLite table so by-agent / DB-based
+    // aggregations (which read from token_usage, not from the JSON file)
+    // include externally-posted records. Without this, worker-reported
+    // tokens land only in the JSON file and the by-agent dashboard widget
+    // stays empty even when usage exists. Failures are non-fatal so the
+    // JSON write remains the canonical record.
+    try {
+      const db = getDatabase()
+      const createdAtSec = Math.floor(Date.now() / 1000)
+      db.prepare(`
+        INSERT INTO token_usage (model, session_id, input_tokens, output_tokens, created_at, workspace_id, task_id, cost_usd, agent_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        model,
+        sessionId,
+        inputTokens,
+        outputTokens,
+        createdAtSec,
+        workspaceId,
+        validatedTaskId,
+        cost,
+        record.agentName,
+      )
+    } catch (err) {
+      logger.warn({ err }, 'token_usage DB insert failed (JSON record persisted)')
+    }
 
     return NextResponse.json({ success: true, record })
   } catch (error) {

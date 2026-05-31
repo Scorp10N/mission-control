@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import path from 'node:path'
 import { config } from './config'
 
 interface CommandOptions {
@@ -21,7 +22,9 @@ export function runCommand(
   options: CommandOptions = {}
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const spawnCommand = path.extname(command).toLowerCase() === '.mjs' ? process.execPath : command
+    const spawnArgs = spawnCommand === process.execPath ? [command, ...args] : args
+    const child = spawn(spawnCommand, spawnArgs, {
       cwd: options.cwd,
       env: options.env,
       shell: false
@@ -30,9 +33,11 @@ export function runCommand(
     let stdout = ''
     let stderr = ''
     let timeoutId: NodeJS.Timeout | undefined
+    let timedOut = false
 
     if (options.timeoutMs) {
       timeoutId = setTimeout(() => {
+        timedOut = true
         child.kill('SIGKILL')
       }, options.timeoutMs)
     }
@@ -51,6 +56,23 @@ export function runCommand(
 
     child.on('error', (error) => {
       if (timeoutId) clearTimeout(timeoutId)
+
+      const enoent = error as NodeJS.ErrnoException
+      if (enoent?.code === 'ENOENT') {
+        const binHint =
+          command === config.openclawBin
+            ? 'OPENCLAW_BIN'
+            : command === config.clawdbotBin
+              ? 'CLAWDBOT_BIN'
+              : `${command.toUpperCase()}_BIN`
+        const friendly = new Error(
+          `Command not found: ${command}. Install it and ensure it is on PATH, or set ${binHint} to an absolute executable path.`
+        )
+        ;(friendly as any).code = enoent.code
+        reject(friendly)
+        return
+      }
+
       reject(error)
     })
 
@@ -58,6 +80,17 @@ export function runCommand(
       if (timeoutId) clearTimeout(timeoutId)
       if (code === 0) {
         resolve({ stdout, stderr, code })
+        return
+      }
+      if (timedOut) {
+        const error = new Error(
+          `Command timed out after ${options.timeoutMs}ms (${command} ${args.join(' ')}): ${stderr || stdout}`
+        )
+        ;(error as any).stdout = stdout
+        ;(error as any).stderr = stderr
+        ;(error as any).code = code
+        ;(error as any).timedOut = true
+        reject(error)
         return
       }
       const error = new Error(

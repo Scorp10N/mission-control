@@ -1,5 +1,7 @@
 FROM node:22.22.0-slim AS base
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Pin pnpm to v10 to match CI and package.json#packageManager. pnpm 11 turns
+# ERR_PNPM_IGNORED_BUILDS into a hard error, breaking fresh Docker builds.
+RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
 WORKDIR /app
 
 FROM base AS deps
@@ -18,6 +20,33 @@ RUN if [ -f pnpm-lock.yaml ]; then \
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# ─── PR-CANDIDATE: NEXT_PUBLIC_* baked into client bundle ──────────────────
+# Next.js inlines NEXT_PUBLIC_* into the client JS at build time. Without
+# these ARG/ENV pairs, downstream operators (Docker / CI / k8s) cannot
+# configure the gateway URL for the browser without a custom image build.
+# Discovered via Project EIGHTBALL deployment with separate subdomain for
+# the gateway (openclaw-mac.example.io) vs dashboard (mc-mac.example.io).
+ARG NEXT_PUBLIC_GATEWAY_URL=
+ARG NEXT_PUBLIC_GATEWAY_HOST=
+ARG NEXT_PUBLIC_GATEWAY_PORT=
+ARG NEXT_PUBLIC_GATEWAY_PROTOCOL=
+ARG NEXT_PUBLIC_GATEWAY_REVERSE_PROXY=
+ARG NEXT_PUBLIC_GATEWAY_CLIENT_ID=
+ARG NEXT_PUBLIC_GATEWAY_OPTIONAL=
+ARG NEXT_PUBLIC_COORDINATOR_AGENT=
+ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID=
+ENV NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL}
+ENV NEXT_PUBLIC_GATEWAY_HOST=${NEXT_PUBLIC_GATEWAY_HOST}
+ENV NEXT_PUBLIC_GATEWAY_PORT=${NEXT_PUBLIC_GATEWAY_PORT}
+ENV NEXT_PUBLIC_GATEWAY_PROTOCOL=${NEXT_PUBLIC_GATEWAY_PROTOCOL}
+ENV NEXT_PUBLIC_GATEWAY_REVERSE_PROXY=${NEXT_PUBLIC_GATEWAY_REVERSE_PROXY}
+ENV NEXT_PUBLIC_GATEWAY_CLIENT_ID=${NEXT_PUBLIC_GATEWAY_CLIENT_ID}
+ENV NEXT_PUBLIC_GATEWAY_OPTIONAL=${NEXT_PUBLIC_GATEWAY_OPTIONAL}
+ENV NEXT_PUBLIC_COORDINATOR_AGENT=${NEXT_PUBLIC_COORDINATOR_AGENT}
+ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+# ────────────────────────────────────────────────────────────────────────────
+
 RUN pnpm build
 
 FROM node:22.22.0-slim AS runtime

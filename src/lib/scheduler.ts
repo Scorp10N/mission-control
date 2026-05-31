@@ -10,7 +10,7 @@ import { pruneGatewaySessionsOlderThan, getAgentLiveStatuses } from './sessions'
 import { eventBus } from './event-bus'
 import { syncSkillsFromDisk } from './skill-sync'
 import { syncLocalAgents } from './local-agent-sync'
-import { dispatchAssignedTasks, runAegisReviews, requeueStaleTasks, autoRouteInboxTasks } from './task-dispatch'
+import { dispatchAssignedTasks, runAegisReviews, requeueStaleTasks, autoRouteInboxTasks, reconcileDeferredTaskCompletions } from './task-dispatch'
 import { spawnRecurringTasks } from './recurring-tasks'
 
 const BACKUP_DIR = join(dirname(config.dbPath), 'backups')
@@ -49,6 +49,14 @@ function getSettingNumber(key: string, defaultValue: number): number {
   } catch {
     return defaultValue
   }
+}
+
+function getEnvNumber(key: string, defaultValue: number): number {
+  const raw = process.env[key]
+  if (!raw) return defaultValue
+
+  const value = Number.parseInt(raw, 10)
+  return Number.isFinite(value) && value > 0 ? value : defaultValue
 }
 
 /** Run a database backup */
@@ -141,15 +149,23 @@ async function runCleanup(): Promise<{ ok: boolean; message: string }> {
       totalDeleted += sessionCleanup.deleted
     }
 
+    let analyzed = false
+    try {
+      db.prepare('ANALYZE').run()
+      analyzed = true
+    } catch (err) {
+      logger.warn({ err }, 'Database ANALYZE failed during cleanup')
+    }
+
     if (totalDeleted > 0) {
       logAuditEvent({
         action: 'auto_cleanup',
         actor: 'scheduler',
-        detail: { total_deleted: totalDeleted },
+        detail: { total_deleted: totalDeleted, analyzed },
       })
     }
 
-    return { ok: true, message: `Cleaned ${totalDeleted} stale record${totalDeleted === 1 ? '' : 's'}` }
+    return { ok: true, message: `Cleaned ${totalDeleted} stale record${totalDeleted === 1 ? '' : 's'}${analyzed ? ' and updated query planner statistics' : ''}` }
   } catch (err: any) {
     return { ok: false, message: `Cleanup failed: ${err.message}` }
   }
@@ -328,7 +344,7 @@ export function initScheduler() {
 
   tasks.set('claude_session_scan', {
     name: 'Claude Session Scan',
-    intervalMs: TICK_MS, // Every 60s — lightweight file stat checks
+    intervalMs: getEnvNumber('MC_CLAUDE_SCAN_INTERVAL_MS', TICK_MS), // Default: every 60s; tune for large ~/.claude/projects trees
     lastRun: null,
     nextRun: now + 5_000, // First scan 5s after startup
     enabled: true,
@@ -450,9 +466,10 @@ async function tick() {
             return { ok: true, message: `Gateway sync: ${r.created} created, ${r.updated} updated, ${r.synced} total | Live status: ${refreshed} refreshed` }
           })
         : id === 'task_dispatch' ? await autoRouteInboxTasks().then(async (routeResult) => {
+            const reconcileResult = await reconcileDeferredTaskCompletions()
             const dispatchResult = await dispatchAssignedTasks()
-            const parts = [routeResult.message, dispatchResult.message].filter(m => m && !m.includes('No '))
-            return { ok: routeResult.ok && dispatchResult.ok, message: parts.join(' | ') || 'No tasks to route or dispatch' }
+            const parts = [reconcileResult.message, routeResult.message, dispatchResult.message].filter(m => m && !m.includes('No ') && !m.includes('none completed'))
+            return { ok: routeResult.ok && reconcileResult.ok && dispatchResult.ok, message: parts.join(' | ') || 'No tasks to reconcile, route, or dispatch' }
           })
         : id === 'aegis_review' ? await runAegisReviews()
         : id === 'recurring_task_spawn' ? await spawnRecurringTasks()
@@ -519,7 +536,7 @@ export async function triggerTask(taskId: string): Promise<{ ok: boolean; messag
   if (taskId === 'skill_sync') return syncSkillsFromDisk()
   if (taskId === 'local_agent_sync') return syncLocalAgents()
   if (taskId === 'gateway_agent_sync') return syncAgentsFromConfig('manual').then(r => ({ ok: true, message: `Gateway sync: ${r.created} created, ${r.updated} updated, ${r.synced} total` }))
-  if (taskId === 'task_dispatch') return autoRouteInboxTasks().then(async (r) => { const d = await dispatchAssignedTasks(); return { ok: r.ok && d.ok, message: [r.message, d.message].filter(m => m && !m.includes('No ')).join(' | ') || 'No tasks' } })
+  if (taskId === 'task_dispatch') return autoRouteInboxTasks().then(async (r) => { const c = await reconcileDeferredTaskCompletions(); const d = await dispatchAssignedTasks(); return { ok: r.ok && c.ok && d.ok, message: [c.message, r.message, d.message].filter(m => m && !m.includes('No ') && !m.includes('none completed')).join(' | ') || 'No tasks' } })
   if (taskId === 'aegis_review') return runAegisReviews()
   if (taskId === 'recurring_task_spawn') return spawnRecurringTasks()
   if (taskId === 'stale_task_requeue') return requeueStaleTasks()

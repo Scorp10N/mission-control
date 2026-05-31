@@ -66,6 +66,20 @@ const defaultMemoryDir = (() => {
 const resolvedGnapRepoPath =
   process.env.GNAP_REPO_PATH || path.join(configuredDataDir, '.gnap')
 
+function resolveDefaultCliBin(command: string): string {
+  if (process.platform !== 'win32') return command
+
+  const appData = process.env.APPDATA || ''
+  if (!appData) return command
+
+  const npmRoot = path.join(appData, 'npm')
+  const npmModuleEntrypoint = path.join(npmRoot, 'node_modules', command, `${command}.mjs`)
+  if (fs.existsSync(npmModuleEntrypoint)) return npmModuleEntrypoint
+
+  const npmCmdShim = path.join(npmRoot, `${command}.cmd`)
+  return fs.existsSync(npmCmdShim) ? npmCmdShim : command
+}
+
 export const config = {
   claudeHome:
     process.env.MC_CLAUDE_HOME ||
@@ -77,8 +91,8 @@ export const config = {
   openclawHome: openclawStateDir,
   openclawStateDir,
   openclawConfigPath,
-  openclawBin: process.env.OPENCLAW_BIN || 'openclaw',
-  clawdbotBin: process.env.CLAWDBOT_BIN || 'clawdbot',
+  openclawBin: process.env.OPENCLAW_BIN || resolveDefaultCliBin('openclaw'),
+  clawdbotBin: process.env.CLAWDBOT_BIN || resolveDefaultCliBin('clawdbot'),
   gatewayHost: process.env.OPENCLAW_GATEWAY_HOST || '127.0.0.1',
   gatewayPort: clampInt(Number(process.env.OPENCLAW_GATEWAY_PORT || '18789'), 1, 65535, 18789),
   logsDir:
@@ -94,6 +108,11 @@ export const config = {
     process.env.OPENCLAW_SOUL_TEMPLATES_DIR ||
     (openclawStateDir ? path.join(openclawStateDir, 'templates', 'souls') : ''),
   homeDir: os.homedir(),
+  // Optional coordinator agent for auto-routing unassigned tasks (issue #663).
+  // Opt-in: empty string means the feature is OFF (tasks created without an
+  // assignee stay unassigned). When set, new tasks with no assigned_to are
+  // routed to this agent name.
+  coordinatorAgent: (process.env.MC_COORDINATOR_AGENT || '').trim(),
   gnap: {
     enabled: process.env.GNAP_ENABLED === 'true',
     repoPath: resolvedGnapRepoPath,

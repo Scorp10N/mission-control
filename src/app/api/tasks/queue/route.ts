@@ -5,6 +5,7 @@ import { agentTaskLimiter } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
 import { routePolicy } from '@/lib/policy-router'
 import { hasUnresolvedDeps } from '@/lib/task-dependencies'
+import { requireWorkspaceId } from '@/lib/enforcement/workspace-scope'
 
 type QueueReason = 'continue_current' | 'assigned' | 'at_capacity' | 'no_tasks_available'
 
@@ -53,7 +54,9 @@ export async function GET(request: NextRequest) {
 
   try {
     const db = getDatabase()
-    const workspaceId = auth.user.workspace_id
+    const wsResult = requireWorkspaceId(auth.user)
+    if (!('workspaceId' in wsResult)) return wsResult.response
+    const { workspaceId } = wsResult
     const { searchParams } = new URL(request.url)
 
     const agent =
@@ -62,6 +65,11 @@ export async function GET(request: NextRequest) {
 
     if (!agent) {
       return NextResponse.json({ error: 'Missing agent. Provide ?agent=... or x-agent-name header.' }, { status: 400 })
+    }
+
+    // Agent keys (non-admin) may only queue for themselves
+    if (auth.user.agent_name && auth.user.role !== 'admin' && agent !== auth.user.agent_name) {
+      return NextResponse.json({ error: 'Access denied: agent key may only queue tasks for itself.' }, { status: 403 })
     }
 
     const maxCapacityRaw = searchParams.get('max_capacity') || '1'

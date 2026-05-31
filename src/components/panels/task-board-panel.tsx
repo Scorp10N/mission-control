@@ -1,10 +1,12 @@
 'use client'
 
 import { useTranslations } from 'next-intl'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useMissionControl } from '@/store'
 import { useSmartPoll } from '@/lib/use-smart-poll'
+import { apiFetch, ApiError } from '@/lib/api-client'
+import { countCommentsDeep } from '@/lib/comment-utils'
 
 import { createClientLogger } from '@/lib/client-logger'
 
@@ -31,6 +33,8 @@ interface Task {
   due_date?: number
   estimated_hours?: number
   actual_hours?: number
+  error_message?: string
+  resolution?: string
   tags?: string[]
   metadata?: any
   aegisApproved?: boolean
@@ -45,7 +49,6 @@ interface Task {
   github_pr_number?: number
   github_pr_state?: string
   comment_count?: number
-  error_message?: string
   dispatch_attempts?: number
 }
 
@@ -135,8 +138,7 @@ function useAgentSessions(agentName: string | undefined) {
   useEffect(() => {
     if (!agentName) { setSessions([]); return }
     let cancelled = false
-    fetch('/api/sessions')
-      .then(r => r.json())
+    apiFetch<{ sessions?: Array<{ key: string; id: string; agent?: string; channel?: string; kind?: string; label?: string; active?: boolean }> }>('/api/sessions')
       .then(data => {
         if (cancelled) return
         const all = (data.sessions || []) as Array<{ key: string; id: string; agent?: string; channel?: string; kind?: string; label?: string; active?: boolean }>
@@ -173,12 +175,10 @@ function useMentionTargets() {
     let cancelled = false
     const run = async () => {
       try {
-        const response = await fetch('/api/mentions?limit=200')
-        if (!response.ok) return
-        const data = await response.json()
+        const data = await apiFetch<{ mentions?: MentionOption[] }>('/api/mentions?limit=200')
         if (!cancelled) setMentionTargets(data.mentions || [])
       } catch {
-        // mention autocomplete is non-critical
+        // mention autocomplete is non-critical (apiFetch throws on non-2xx; ignored)
       }
     }
     run()
@@ -340,12 +340,10 @@ function DunkItButton({ taskId, onDunked }: { taskId: number; onDunked: (id: num
     e.stopPropagation()
     if (phase !== 'idle') return
     try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
+      await apiFetch(`/api/tasks/${taskId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'done' }),
       })
-      if (!res.ok) throw new Error('Failed')
       setPhase('success')
       setTimeout(() => {
         setPhase('dismissing')
@@ -454,19 +452,21 @@ export function TaskBoardPanel() {
       }
       const tasksUrl = tasksQuery.toString() ? `/api/tasks?${tasksQuery.toString()}` : '/api/tasks'
 
-      const [tasksResponse, agentsResponse, projectsResponse] = await Promise.all([
-        fetch(tasksUrl),
-        fetch('/api/agents'),
-        fetch('/api/projects')
-      ])
-
-      if (!tasksResponse.ok || !agentsResponse.ok || !projectsResponse.ok) {
-        throw new Error('Failed to fetch data')
+      let tasksData: { tasks?: Task[] }
+      let agentsData: { agents?: Agent[] }
+      let projectsData: { projects?: Project[] }
+      try {
+        [tasksData, agentsData, projectsData] = await Promise.all([
+          apiFetch<{ tasks?: Task[] }>(tasksUrl),
+          apiFetch<{ agents?: Agent[] }>('/api/agents'),
+          apiFetch<{ projects?: Project[] }>('/api/projects'),
+        ])
+      } catch (err) {
+        // Preserve the original aggregate error message regardless of which call failed.
+        // apiFetch already handled the 401 redirect for UNAUTHENTICATED before throwing.
+        if (err instanceof ApiError) throw new Error('Failed to fetch data')
+        throw err
       }
-
-      const tasksData = await tasksResponse.json()
-      const agentsData = await agentsResponse.json()
-      const projectsData = await projectsResponse.json()
 
       const tasksList = tasksData.tasks || []
       const taskIds = tasksList.map((task: Task) => task.id)
@@ -477,8 +477,7 @@ export function TaskBoardPanel() {
       setProjects(projectsData.projects || [])
 
       if (taskIds.length > 0) {
-        fetch(`/api/quality-review?taskIds=${taskIds.join(',')}`)
-          .then((reviewResponse) => reviewResponse.ok ? reviewResponse.json() : null)
+        apiFetch<{ latest?: Record<string, { reviewer?: string; status?: string }> }>(`/api/quality-review?taskIds=${taskIds.join(',')}`)
           .then((reviewData) => {
             const latest = reviewData?.latest || {}
             const newAegisMap: Record<number, boolean> = Object.fromEntries(
@@ -508,8 +507,7 @@ export function TaskBoardPanel() {
 
   // Fetch GNAP status
   useEffect(() => {
-    fetch('/api/gnap')
-      .then(r => r.ok ? r.json() : null)
+    apiFetch<{ enabled: boolean; taskCount?: number; lastSync?: string } | null>('/api/gnap')
       .then(data => { if (data) setGnapStatus(data) })
       .catch(() => {})
   }, [])
@@ -517,11 +515,8 @@ export function TaskBoardPanel() {
   const handleGnapSync = useCallback(async () => {
     setGnapSyncing(true)
     try {
-      const res = await fetch('/api/gnap?action=sync', { method: 'POST' })
-      if (res.ok) {
-        const data = await res.json()
-        setGnapStatus(prev => prev ? { ...prev, taskCount: data.pushed, lastSync: data.lastSync } : prev)
-      }
+      const data = await apiFetch<{ pushed?: number; lastSync?: string }>('/api/gnap?action=sync', { method: 'POST' })
+      setGnapStatus(prev => prev ? { ...prev, taskCount: data.pushed, lastSync: data.lastSync } : prev)
     } catch { /* ignore */ }
     finally { setGnapSyncing(false) }
   }, [])
@@ -604,12 +599,14 @@ export function TaskBoardPanel() {
 
     try {
       if (newStatus === 'done') {
-        const reviewResponse = await fetch(`/api/quality-review?taskId=${draggedTask.id}`)
-        if (!reviewResponse.ok) {
-          throw new Error('Unable to verify Aegis approval')
+        let reviewData: { reviews?: Array<{ reviewer?: string; status?: string }> }
+        try {
+          reviewData = await apiFetch<{ reviews?: Array<{ reviewer?: string; status?: string }> }>(`/api/quality-review?taskId=${draggedTask.id}`)
+        } catch (reviewErr) {
+          if (reviewErr instanceof ApiError) throw new Error('Unable to verify Aegis approval')
+          throw reviewErr
         }
-        const reviewData = await reviewResponse.json()
-        const latest = reviewData.reviews?.find((review: any) => review.reviewer === 'aegis')
+        const latest = reviewData.reviews?.find((review) => review.reviewer === 'aegis')
         if (!latest || latest.status !== 'approved') {
           throw new Error('Aegis approval is required before moving to done')
         }
@@ -621,10 +618,11 @@ export function TaskBoardPanel() {
         updated_at: Math.floor(Date.now() / 1000)
       })
 
-      // Update on server
-      const response = await fetch('/api/tasks', {
+      // Update on server. raw:true preserves the original !response.ok semantics —
+      // task updates can return 400/422 validation errors that apiFetch would NOT throw on.
+      const response = await apiFetch<Response>('/api/tasks', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        raw: true,
         body: JSON.stringify({
           tasks: [{ id: draggedTask.id, status: newStatus }]
         })
@@ -677,9 +675,12 @@ export function TaskBoardPanel() {
     })
 
     try {
-      const response = await fetch('/api/spawn', {
+      // raw:true preserves the original semantics: the body is parsed and branched
+      // on result.success/result.error regardless of HTTP status (this endpoint never
+      // gated on response.ok).
+      const response = await apiFetch<Response>('/api/spawn', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        raw: true,
         body: JSON.stringify(spawnFormData),
       })
       const result = await response.json()
@@ -1235,27 +1236,33 @@ function TaskDetailModal({
 
   const fetchReviews = useCallback(async () => {
     try {
-      const response = await fetch(`/api/quality-review?taskId=${task.id}`)
-      if (!response.ok) throw new Error('Failed to fetch reviews')
-      const data = await response.json()
+      const data = await apiFetch<{ reviews?: any[] }>(`/api/quality-review?taskId=${task.id}`)
       setReviews(data.reviews || [])
     } catch (error) {
       setReviewError('Failed to load quality reviews')
     }
   }, [task.id])
 
+  // Tracks whether comments have been loaded at least once, so the background
+  // poll doesn't flip loadingComments (which would unmount the comment list and
+  // reset the user's scroll position every 15s — issue #660).
+  const commentsLoadedRef = useRef(false)
   const fetchComments = useCallback(async () => {
     try {
-      setLoadingComments(true)
-      const response = await fetch(`/api/tasks/${task.id}/comments`)
-      if (!response.ok) throw new Error('Failed to fetch comments')
-      const data = await response.json()
+      if (!commentsLoadedRef.current) setLoadingComments(true)
+      const data = await apiFetch<{ comments?: Comment[] }>(`/api/tasks/${task.id}/comments`)
       setComments(data.comments || [])
+      commentsLoadedRef.current = true
     } catch (error) {
       setCommentError('Failed to load comments')
     } finally {
       setLoadingComments(false)
     }
+  }, [task.id])
+
+  // Reset the first-load guard when switching to a different task.
+  useEffect(() => {
+    commentsLoadedRef.current = false
   }, [task.id])
 
   useEffect(() => {
@@ -1264,8 +1271,13 @@ function TaskDetailModal({
   useEffect(() => {
     fetchReviews()
   }, [fetchReviews])
-  
+
   useSmartPoll(fetchComments, 15000)
+
+  // Count ALL comments (top-level + nested replies) so the comments-tab badge
+  // matches the task-card badge, which uses a flat COUNT(*) over the comments
+  // table. `comments.length` alone counts only top-level threads (issue #664).
+  const totalCommentCount = useMemo(() => countCommentsDeep(comments), [comments])
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1273,9 +1285,11 @@ function TaskDetailModal({
 
     try {
       setCommentError(null)
-      const response = await fetch(`/api/tasks/${task.id}/comments`, {
+      // raw:true preserves the original !response.ok gate (covers 400/422 validation
+      // errors that apiFetch would otherwise treat as success).
+      const response = await apiFetch<Response>(`/api/tasks/${task.id}/comments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        raw: true,
         body: JSON.stringify({
           author: commentAuthor || 'system',
           content: commentText
@@ -1296,9 +1310,10 @@ function TaskDetailModal({
 
     try {
       setBroadcastStatus(null)
-      const response = await fetch(`/api/tasks/${task.id}/broadcast`, {
+      // raw:true preserves the unconditional body parse + !response.ok gate.
+      const response = await apiFetch<Response>(`/api/tasks/${task.id}/broadcast`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        raw: true,
         body: JSON.stringify({
           author: commentAuthor || 'system',
           message: broadcastMessage
@@ -1317,9 +1332,10 @@ function TaskDetailModal({
     e.preventDefault()
     try {
       setReviewError(null)
-      const response = await fetch('/api/quality-review', {
+      // raw:true preserves the unconditional body parse + !response.ok gate.
+      const response = await apiFetch<Response>('/api/quality-review', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        raw: true,
         body: JSON.stringify({
           taskId: task.id,
           reviewer,
@@ -1417,6 +1433,7 @@ function TaskDetailModal({
     review: 'bg-purple-500/15 text-purple-400 border-purple-500/25',
     quality_review: 'bg-purple-500/15 text-purple-400 border-purple-500/25',
     done: 'bg-green-500/15 text-green-400 border-green-500/25',
+    failed: 'bg-red-500/15 text-red-400 border-red-500/25',
     awaiting_owner: 'bg-orange-500/15 text-orange-400 border-orange-500/25',
   }
 
@@ -1460,7 +1477,9 @@ function TaskDetailModal({
                 onClick={async () => {
                   if (!confirm(t('deleteTaskConfirm', { title: task.title }))) return
                   try {
-                    const res = await fetch(`/api/tasks/${task.id}`, { method: 'DELETE' })
+                    // raw:true preserves reading the server error body on !res.ok to
+                    // surface the precise message in the alert.
+                    const res = await apiFetch<Response>(`/api/tasks/${task.id}`, { method: 'DELETE', raw: true })
                     if (!res.ok) {
                       const errorData = await res.json().catch(() => ({ error: 'Failed to delete task' }))
                       throw new Error(errorData.error || 'Failed to delete task')
@@ -1500,9 +1519,11 @@ function TaskDetailModal({
             <button
               onClick={async () => {
                 try {
-                  const res = await fetch(`/api/tasks/${task.id}`, {
+                  // raw:true preserves the `if (res.ok) onClose()` gate so a 400/422
+                  // does not incorrectly close the modal.
+                  const res = await apiFetch<Response>(`/api/tasks/${task.id}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    raw: true,
                     body: JSON.stringify({ status: 'assigned', dispatch_attempts: 0, error_message: null }),
                   })
                   if (res.ok) onClose()
@@ -1533,8 +1554,8 @@ function TaskDetailModal({
                 }`}
               >
                 {tab === 'details' ? t('tabDetails') : tab === 'comments' ? t('tabComments') : t('tabQualityReview')}
-                {tab === 'comments' && comments.length > 0 && (
-                  <span className="ml-1.5 text-[10px] text-muted-foreground/60">{comments.length}</span>
+                {tab === 'comments' && totalCommentCount > 0 && (
+                  <span className="ml-1.5 text-[10px] text-muted-foreground/60">{totalCommentCount}</span>
                 )}
               </button>
             ))}
@@ -1570,9 +1591,10 @@ function TaskDetailModal({
                   onChange={async (e) => {
                     const newAssignee = e.target.value || null
                     try {
-                      const res = await fetch(`/api/tasks/${task.id}`, {
+                      // raw:true preserves the !res.ok gate so onUpdate only runs on success.
+                      const res = await apiFetch<Response>(`/api/tasks/${task.id}`, {
                         method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
+                        raw: true,
                         body: JSON.stringify({ assigned_to: newAssignee }),
                       })
                       if (!res.ok) throw new Error('Failed to assign')
@@ -1589,6 +1611,17 @@ function TaskDetailModal({
                 </select>
                 {task.assigned_to && <AgentAvatar name={task.assigned_to} size="xs" />}
               </div>
+
+              {task.status === 'failed' && task.error_message && (
+                <div className="rounded-lg border border-red-500/25 bg-red-500/10 p-3">
+                  <div className="text-[10px] font-medium uppercase tracking-wider text-red-400/80">
+                    Failure reason
+                  </div>
+                  <div className="mt-2 whitespace-pre-wrap break-words text-xs leading-relaxed text-red-100/90">
+                    {task.error_message}
+                  </div>
+                </div>
+              )}
 
               {/* Metadata grid */}
               <div className="grid grid-cols-2 gap-3 text-xs">
@@ -1826,13 +1859,18 @@ function TaskSessionFeed({ sessionId, agentName, isLive }: { sessionId: string; 
 
   const fetchTranscript = useCallback(async () => {
     try {
-      const res = await fetch(`/api/sessions/transcript?kind=claude-code&id=${encodeURIComponent(sessionId)}&limit=100`)
-      if (!res.ok) throw new Error(`Failed to fetch transcript: ${res.status}`)
-      const data = await res.json()
+      const data = await apiFetch<{ messages?: SessionTranscriptMessage[] }>(
+        `/api/sessions/transcript?kind=claude-code&id=${encodeURIComponent(sessionId)}&limit=100`
+      )
       setMessages(data.messages || [])
       setError(null)
     } catch (err: any) {
-      setError(err.message || 'Failed to load session transcript')
+      // Preserve the original status-bearing message format on non-2xx responses.
+      if (err instanceof ApiError) {
+        setError(`Failed to fetch transcript: ${err.status}`)
+      } else {
+        setError(err?.message || 'Failed to load session transcript')
+      }
     } finally {
       setLoading(false)
     }
@@ -1913,8 +1951,7 @@ function ClaudeCodeTasksSection() {
 
   useEffect(() => {
     if (!expanded || loaded) return
-    fetch('/api/claude-tasks')
-      .then(r => r.json())
+    apiFetch<{ teams: any[]; tasks: any[] }>('/api/claude-tasks')
       .then(d => { setData(d); setLoaded(true) })
       .catch(() => setLoaded(true))
   }, [expanded, loaded])
@@ -1997,8 +2034,7 @@ function HermesCronSection() {
 
   useEffect(() => {
     if (!expanded || loaded) return
-    fetch('/api/hermes/tasks')
-      .then(r => r.json())
+    apiFetch<{ cronJobs: any[] }>('/api/hermes/tasks')
       .then(d => { setData(d); setLoaded(true) })
       .catch(() => setLoaded(true))
   }, [expanded, loaded])
@@ -2083,7 +2119,9 @@ function CreateTaskModal({
     setParsedSchedule(null)
     if (!value.trim()) return
     try {
-      const res = await fetch(`/api/schedule-parse?input=${encodeURIComponent(value.trim())}`)
+      // raw:true preserves the unconditional body parse + body-shape branching
+      // (a non-ok response without cronExpr still yields 'Could not parse schedule').
+      const res = await apiFetch<Response>(`/api/schedule-parse?input=${encodeURIComponent(value.trim())}`, { raw: true })
       const data = await res.json()
       if (data.cronExpr) {
         setParsedSchedule(data)
@@ -2117,9 +2155,11 @@ function CreateTaskModal({
     }
 
     try {
-      const response = await fetch('/api/tasks', {
+      // raw:true preserves reading the validation error body (details/error) on
+      // !response.ok — 400/422 validation responses that apiFetch would not throw on.
+      const response = await apiFetch<Response>('/api/tasks', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        raw: true,
         body: JSON.stringify({
           ...formData,
           project_id: formData.project_id ? Number(formData.project_id) : undefined,
@@ -2354,9 +2394,11 @@ function EditTaskModal({
         delete updatedMeta.target_session
       }
 
-      const response = await fetch(`/api/tasks/${task.id}`, {
+      // raw:true preserves reading the validation error body (details/error) on
+      // !response.ok — 400/422 validation responses that apiFetch would not throw on.
+      const response = await apiFetch<Response>(`/api/tasks/${task.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        raw: true,
         body: JSON.stringify({
           ...formData,
           project_id: formData.project_id ? Number(formData.project_id) : undefined,
@@ -2427,6 +2469,7 @@ function EditTaskModal({
                   <option value="review">{t('colReview')}</option>
                   <option value="quality_review">{t('colQualityReview')}</option>
                   <option value="done">{t('colDone')}</option>
+                  <option value="failed">{t('colFailed')}</option>
                 </select>
               </div>
 

@@ -16,6 +16,8 @@ function getApiKey(req: NextRequest): string {
   return req.headers.get('x-api-key') ?? ''
 }
 
+// Known limitation (TASK-065): auth is role-based, not per-agent. Multiple agents sharing
+// one operator key cannot be individually revoked, rate-limited, or audited by agent identity.
 export async function POST(request: NextRequest) {
   // Minimum role required to use the MCP endpoint at all is viewer
   const auth = await requireRole(request, 'viewer')

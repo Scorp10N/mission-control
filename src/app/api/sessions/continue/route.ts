@@ -54,8 +54,10 @@ async function resolveExecutable(name: string): Promise<string> {
  * "No conversation found".
  */
 async function resolveClaudeSessionCwd(sessionId: string): Promise<string | null> {
+  if (!/^[a-zA-Z0-9._:-]{1,64}$/.test(sessionId)) return null
   const home = os.homedir()
   const projectsRoot = path.join(home, '.claude', 'projects')
+  const projectsRootResolved = path.resolve(projectsRoot)
   let entries: string[]
   try {
     entries = await fs.readdir(projectsRoot)
@@ -64,6 +66,7 @@ async function resolveClaudeSessionCwd(sessionId: string): Promise<string | null
   }
   for (const encoded of entries) {
     const candidate = path.join(projectsRoot, encoded, `${sessionId}.jsonl`)
+    if (!path.resolve(candidate).startsWith(projectsRootResolved + path.sep)) continue
     try {
       await fs.access(candidate)
     } catch {
@@ -137,8 +140,10 @@ function shQuote(s: string): string {
 
 /** Best-effort mtime check on a session jsonl in any candidate project dir. */
 async function getSessionJsonlMtime(sessionId: string): Promise<number | null> {
+  if (!/^[a-zA-Z0-9._:-]{1,64}$/.test(sessionId)) return null
   const home = os.homedir()
   const projectsRoot = path.join(home, '.claude', 'projects')
+  const projectsRootResolved = path.resolve(projectsRoot)
   let entries: string[]
   try {
     entries = await fs.readdir(projectsRoot)
@@ -147,6 +152,7 @@ async function getSessionJsonlMtime(sessionId: string): Promise<number | null> {
   }
   for (const encoded of entries) {
     const candidate = path.join(projectsRoot, encoded, `${sessionId}.jsonl`)
+    if (!path.resolve(candidate).startsWith(projectsRootResolved + path.sep)) continue
     try {
       const stat = await fs.stat(candidate)
       return stat.mtimeMs
@@ -250,8 +256,10 @@ export async function POST(request: NextRequest) {
           const projectsRoot = path.join(home, '.claude', 'projects')
           try {
             const entries = await fs.readdir(projectsRoot)
+            const projectsRootResolved = path.resolve(projectsRoot)
             for (const encoded of entries) {
               const candidate = path.join(projectsRoot, encoded, `${sessionId}.jsonl`)
+              if (!path.resolve(candidate).startsWith(projectsRootResolved + path.sep)) continue
               try {
                 const now = new Date()
                 await fs.utimes(candidate, now, now)

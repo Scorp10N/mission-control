@@ -51,6 +51,7 @@ Groups:
   auth         login/logout/whoami
   agents       list/get/create/update/delete/wake/diagnostics/heartbeat
                memory get|set|clear / soul get|set|templates / attribution
+               keys list|create|revoke
   tasks        list/get/create/update/delete/queue
                comments list|add / broadcast
   sessions     list/control/continue/transcript
@@ -75,6 +76,9 @@ Examples:
   mc agents list --json
   mc agents memory get --id 5
   mc agents soul set --id 5 --template operator
+  mc agents keys list --id 5
+  mc agents keys create --id 5 --name mcp-key --scopes operator
+  mc agents keys revoke --id 5 --key-id 12
   mc tasks queue --agent Aegis --max-capacity 2
   mc tasks comments list --id 42
   mc tasks comments add --id 42 --content "Looks good"
@@ -382,6 +386,26 @@ const commands = {
         return { method: 'PATCH', route: `/api/agents/${id}/soul${qs}` };
       }
       throw new Error(`Unknown agents soul subcommand: ${sub}. Use get|set|templates`);
+    },
+    // Subcommand: agents keys list|create|revoke --id <agent_id>
+    keys: (flags) => {
+      const id = required(flags, 'id');
+      const sub = flags._sub;
+      if (sub === 'list' || !sub) return { method: 'GET', route: `/api/agents/${id}/keys` };
+      if (sub === 'create') {
+        const body = { name: optional(flags, 'name', 'mcp-key') };
+        if (flags.scopes) body.scopes = String(flags.scopes).split(',').map(s => s.trim());
+        if (flags['expires-in-days']) body.expires_in_days = Number(flags['expires-in-days']);
+        return { method: 'POST', route: `/api/agents/${id}/keys`, body };
+      }
+      if (sub === 'revoke') {
+        return {
+          method: 'DELETE',
+          route: `/api/agents/${id}/keys`,
+          body: { key_id: Number(required(flags, 'key-id')) },
+        };
+      }
+      throw new Error(`Unknown agents keys subcommand: ${sub}. Use list|create|revoke`);
     },
   },
 

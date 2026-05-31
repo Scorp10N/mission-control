@@ -1473,6 +1473,26 @@ const migrations: Migration[] = [
         CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON tasks(parent_id);
       `)
     }
+  },
+  {
+    id: '054_mcp_audit_log',
+    up(db: Database.Database) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS mcp_audit_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          agent_id INTEGER,
+          agent_name TEXT,
+          username TEXT NOT NULL,
+          tool_name TEXT,
+          workspace_id INTEGER NOT NULL DEFAULT 1,
+          status TEXT NOT NULL DEFAULT 'ok',
+          called_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+        CREATE INDEX IF NOT EXISTS idx_mcp_audit_agent_id ON mcp_audit_log(agent_id);
+        CREATE INDEX IF NOT EXISTS idx_mcp_audit_called_at ON mcp_audit_log(called_at);
+        CREATE INDEX IF NOT EXISTS idx_mcp_audit_workspace ON mcp_audit_log(workspace_id, called_at);
+      `)
+    }
   }
 ]
 

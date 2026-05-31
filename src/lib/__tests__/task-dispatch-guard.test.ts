@@ -67,6 +67,34 @@ beforeEach(() => {
 })
 
 describe('dispatchAssignedTasks policy guard', () => {
+  it('skips queue-driven local agents instead of invoking OpenClaw', async () => {
+    const localTask = {
+      ...baseTask,
+      assigned_to: 'codex',
+      agent_name: 'codex',
+      agent_config: JSON.stringify({
+        framework: 'codex-cli',
+        capabilities: ['coding', 'file-editing', 'test-running', 'parallel-execution', 'worktrees'],
+      }),
+    }
+    mockDbAll.mockImplementation((sql: string) =>
+      sql.includes('JOIN agents') ? [localTask] : []
+    )
+
+    const result = await dispatchAssignedTasks()
+
+    expect(mockRoutePolicy).not.toHaveBeenCalled()
+    expect(mockRunOpenClaw).not.toHaveBeenCalled()
+    expect(mockDbRun).not.toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?'),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    )
+    expect(result.ok).toBe(true)
+    expect(result.message).toContain('Skipped 1 queue-driven task')
+  })
+
   it('does not call runOpenClaw when policy rejects the task', async () => {
     mockRoutePolicy.mockResolvedValue({
       action: 'reject',

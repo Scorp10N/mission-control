@@ -1,3 +1,5 @@
+import { spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { getDatabase, db_helpers } from './db'
 import { runOpenClaw } from './command'
 import { callOpenClawGateway } from './openclaw-gateway'
@@ -38,6 +40,41 @@ interface DispatchableTask {
   project_ticket_no: number | null
   project_id: number | null
   tags?: string[]
+}
+
+const LOCAL_QUEUE_FRAMEWORKS = new Set([
+  'codex-cli',
+  'claude-code',
+  'hermes',
+  'pi-coding-agent',
+  'opencode',
+])
+
+function parseAgentConfig(task: Pick<DispatchableTask, 'agent_config'>): Record<string, unknown> {
+  if (!task.agent_config) return {}
+  try {
+    const parsed = JSON.parse(task.agent_config)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function isQueueDrivenLocalAgent(task: Pick<DispatchableTask, 'agent_config'>): boolean {
+  const cfg = parseAgentConfig(task)
+  const framework = typeof cfg.framework === 'string' ? cfg.framework.trim().toLowerCase() : ''
+  if (framework && LOCAL_QUEUE_FRAMEWORKS.has(framework)) return true
+
+  const capabilities = Array.isArray(cfg.capabilities) ? cfg.capabilities : []
+  return capabilities.some((cap) => typeof cap === 'string' && cap.trim().toLowerCase() === 'local-agent')
+}
+
+function commandExists(command: string): boolean {
+  const trimmed = command.trim()
+  if (!trimmed) return false
+  if (trimmed.includes('/')) return existsSync(trimmed)
+  const result = spawnSync('which', [trimmed], { encoding: 'utf-8' })
+  return result.status === 0
 }
 
 // ---------------------------------------------------------------------------
@@ -171,8 +208,8 @@ function getAnthropicApiKey(): string | null {
 }
 
 function isGatewayAvailable(): boolean {
-  // Gateway is available if OpenClaw is installed OR a gateway is registered in the DB
-  if (config.openclawHome) return true
+  // Gateway is available if OpenClaw is actually installed OR a gateway is registered in the DB.
+  if (commandExists(config.openclawBin)) return true
   try {
     const db = getDatabase()
     const row = db.prepare('SELECT COUNT(*) as c FROM gateways').get() as { c: number } | undefined
@@ -693,10 +730,25 @@ export async function dispatchAssignedTasks(): Promise<{ ok: boolean; message: s
     }
   }
 
-  const results: Array<{ id: number; success: boolean; error?: string }> = []
+  const results: Array<{ id: number; success: boolean; error?: string; skipped?: boolean }> = []
   const now = Math.floor(Date.now() / 1000)
 
   for (const task of tasks) {
+    if (isQueueDrivenLocalAgent(task)) {
+      const framework = parseAgentConfig(task).framework
+      db_helpers.logActivity(
+        'task_dispatch_skipped',
+        'task',
+        task.id,
+        'scheduler',
+        `Skipping OpenClaw dispatch for queue-driven local agent ${task.agent_name}`,
+        { agent: task.agent_name, framework: typeof framework === 'string' ? framework : null, reason: 'local_queue_agent' },
+        task.workspace_id
+      )
+      results.push({ id: task.id, success: true, skipped: true })
+      continue
+    }
+
     // Check weekly cost cap before dispatching
     if (task.assigned_to && isAgentOverLimit(db, task.assigned_to, task.workspace_id)) {
       const percent = Math.round(limitUsagePercent(db, task.assigned_to, task.workspace_id))
@@ -957,15 +1009,23 @@ export async function dispatchAssignedTasks(): Promise<{ ok: boolean; message: s
     }
   }
 
-  const succeeded = results.filter(r => r.success).length
+  const succeeded = results.filter(r => r.success && !r.skipped).length
+  const skipped = results.filter(r => r.skipped).length
   const failed = results.filter(r => !r.success)
   const failSummary = failed.length > 0
     ? ` (${failed.length} failed: ${failed.map(f => f.error).join('; ')})`
     : ''
+  const skipSummary = skipped > 0
+    ? skipped === tasks.length
+      ? `Skipped ${skipped} queue-driven task${skipped === 1 ? '' : 's'}; local agents will claim them via heartbeat`
+      : `; skipped ${skipped} queue-driven task${skipped === 1 ? '' : 's'}`
+    : ''
 
   return {
     ok: failed.length === 0,
-    message: `Dispatched ${succeeded}/${tasks.length} tasks${failSummary}`,
+    message: skipped === tasks.length && skipped > 0
+      ? skipSummary
+      : `Dispatched ${succeeded}/${tasks.length - skipped} tasks${skipSummary}${failSummary}`,
   }
 }
 

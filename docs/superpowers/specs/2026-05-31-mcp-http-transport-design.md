@@ -95,34 +95,36 @@ export async function POST(request: NextRequest) {
 
 **`src/lib/mcp-tools.ts`** — role-gated tool registry
 
+Tool signatures below show representative examples. The implementation plan will enumerate all tools by mapping them from `mc-mcp-server.cjs`'s tool registry (~56 tools total).
+
 ```ts
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import * as db from '@/lib/db'
 
 export function buildMcpTools(server: McpServer, role: 'viewer' | 'operator' | 'admin') {
-  // --- viewer tools (always registered) ---
-  server.tool('mc_tasks_list', { status: z.string().optional() }, ...)
+  // --- viewer tools (always registered — representative sample) ---
+  server.tool('mc_tasks_list', { status: z.string().optional() }, async ({ status }) => ({
+    content: [{ type: 'text', text: JSON.stringify(db.getTasks({ status })) }]
+  }))
   server.tool('mc_tasks_get', { id: z.number() }, ...)
   server.tool('mc_agents_list', {}, ...)
-  server.tool('mc_agents_get', { id: z.number() }, ...)
   server.tool('mc_status_overview', {}, ...)
-  // ... all read tools
+  // Full tool list enumerated in implementation plan
 
   if (role === 'operator' || role === 'admin') {
-    // --- operator tools ---
-    server.tool('mc_tasks_create', { title: z.string(), ... }, ...)
-    server.tool('mc_tasks_update', { id: z.number(), ... }, ...)
+    // --- operator tools (representative sample) ---
+    server.tool('mc_tasks_create', { title: z.string(), description: z.string().optional() }, ...)
+    server.tool('mc_tasks_update', { id: z.number(), status: z.string().optional() }, ...)
     server.tool('mc_comments_add', { taskId: z.number(), content: z.string() }, ...)
     server.tool('mc_agents_heartbeat', { id: z.number() }, ...)
-    server.tool('mc_agents_memory_set', { ... }, ...)
-    // ... all operator tools
+    // Full operator tool list in implementation plan
   }
 
   if (role === 'admin') {
-    // --- admin tools ---
+    // --- admin tools (representative sample) ---
     server.tool('mc_agents_delete', { id: z.number() }, ...)
-    // ... admin-only tools
+    // Full admin tool list in implementation plan
   }
 }
 ```

@@ -5,9 +5,11 @@ import { requireRole } from '@/lib/auth'
 import { buildMcpTools } from '@/lib/mcp-tools'
 
 function getMcBaseUrl(req: NextRequest): string {
-  const proto = req.headers.get('x-forwarded-proto') ?? 'http'
-  const host = req.headers.get('host') ?? 'localhost:3000'
-  return `${proto}://${host}`
+  // For internal server-to-server calls, always use localhost with the actual server port.
+  // The Host header reflects the external port (e.g. 3001 in Docker) which is not
+  // reachable from within the container itself. The server always binds to PORT internally.
+  const port = process.env.PORT ?? '3000'
+  return `http://localhost:${port}`
 }
 
 function getApiKey(req: NextRequest): string {
@@ -28,6 +30,7 @@ export async function POST(request: NextRequest) {
   const server = new McpServer({ name: 'mission-control', version: '2.0.1' })
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined, // stateless — safe for buffering proxies
+    enableJsonResponse: true,      // return JSON not SSE; simpler for agents and proxies
   })
 
   try {

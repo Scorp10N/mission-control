@@ -16,7 +16,7 @@
 set -e
 
 # Configuration
-MISSION_CONTROL_URL="${MISSION_CONTROL_URL:-http://localhost:3000}"
+MISSION_CONTROL_URL="${MISSION_CONTROL_URL:-http://localhost:3001}"
 LOG_DIR="${LOG_DIR:-$HOME/.mission-control/logs}"
 LOG_FILE="$LOG_DIR/notification-daemon-$(date +%Y-%m-%d).log"
 PID_FILE="/tmp/notification-daemon.pid"
@@ -297,7 +297,7 @@ Examples:
   ./notification-daemon.sh --stop
 
 Environment variables:
-  MISSION_CONTROL_URL    Mission Control base URL (default: http://localhost:3005)
+  MISSION_CONTROL_URL    Mission Control base URL (default: http://localhost:3001)
 
 Log files:
   $LOG_DIR/notification-daemon-YYYY-MM-DD.log

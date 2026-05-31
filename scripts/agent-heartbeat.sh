@@ -11,7 +11,7 @@
 set -e
 
 # Configuration
-MISSION_CONTROL_URL="${MISSION_CONTROL_URL:-http://localhost:3000}"
+MISSION_CONTROL_URL="${MISSION_CONTROL_URL:-http://localhost:3001}"
 LOG_DIR="${LOG_DIR:-$HOME/.mission-control/logs}"
 LOG_FILE="$LOG_DIR/agent-heartbeat-$(date +%Y-%m-%d).log"
 MAX_CONCURRENT=3  # Max agents to check concurrently
@@ -230,7 +230,7 @@ case "${1:-}" in
         echo "  --help, -h    Show this help message"
         echo ""
         echo "Environment variables:"
-        echo "  MISSION_CONTROL_URL  Mission Control base URL (default: http://localhost:3005)"
+        echo "  MISSION_CONTROL_URL  Mission Control base URL (default: http://localhost:3001)"
         echo ""
         exit 0
         ;;

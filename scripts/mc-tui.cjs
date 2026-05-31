@@ -39,13 +39,13 @@ function loadProfile(name) {
   try {
     const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
     return {
-      url: parsed.url || process.env.MC_URL || 'http://127.0.0.1:3000',
+      url: parsed.url || process.env.MISSION_CONTROL_URL || process.env.MC_URL || 'http://localhost:3001',
       apiKey: parsed.apiKey || process.env.MC_API_KEY || '',
       cookie: parsed.cookie || process.env.MC_COOKIE || '',
     };
   } catch {
     return {
-      url: process.env.MC_URL || 'http://127.0.0.1:3000',
+      url: process.env.MISSION_CONTROL_URL || process.env.MC_URL || 'http://localhost:3001',
       apiKey: process.env.MC_API_KEY || '',
       cookie: process.env.MC_COOKIE || '',
     };

@@ -58,9 +58,10 @@ scripts/mc-mcp-server.cjs
 **MCP Streamable HTTP** (`@modelcontextprotocol/sdk` — `StreamableHTTPServerTransport`).
 
 - Single `POST /api/mcp` endpoint handles all MCP operations
-- Returns JSON for simple requests, SSE stream for streaming responses
+- Returns **JSON only** — SSE streaming is not used in stateless mode (no `sessionId`)
 - Uses Web API `Request`/`Response` — compatible with Next.js App Router
 - **Stateless** (`sessionIdGenerator: undefined`) — new transport per request, safe for Next.js serverless model
+- JSON-only responses are buffering-proxy safe (nginx, Tailscale Funnel, etc.)
 
 Legacy SSE transport (separate GET + POST) is explicitly excluded — Streamable HTTP is the current MCP standard and all current agent clients support it.
 
@@ -89,8 +90,14 @@ export async function POST(request: NextRequest) {
   buildMcpTools(server, auth.user.role)
 
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
-  await server.connect(transport)
-  return transport.handleRequest(request)
+  try {
+    await server.connect(transport)
+    return await transport.handleRequest(request)
+  } finally {
+    // Always clean up to prevent event listener accumulation + OOM in constrained container
+    await transport.close().catch(() => {})
+    await server.close().catch(() => {})
+  }
 }
 ```
 
@@ -198,6 +205,18 @@ Tools for higher roles are **never registered** in the MCP manifest for a lower-
 - `POST /api/mcp` viewer key + `tools/call mc_tasks_create` → MCP "Tool not found" error (by design — tool not registered in manifest, not a JSON-RPC method error)
 
 **Smoke test**: `claude mcp add mission-control -- <url>` → `mc_tasks_list` in Claude Code session → result returned.
+
+> **Container smoke test required:** Run against standalone Docker container (`docker compose up`), not just `pnpm dev`. The container uses a read-only FS (tmpfs only at `/tmp` and `/app/.next/cache`) — SDK ESM initialization failures and EROFS errors only surface in the production container, not dev server.
+
+---
+
+## Known Limitations
+
+**Shared operator keys — no per-agent revocation**
+
+The current `x-api-key` model is per-role, not per-agent. Multiple agents sharing one operator key cannot be audited, rate-limited, or revoked individually.
+
+This is out of scope for this task. See follow-up task: **[#60 — per-agent API tokens](http://127.0.0.1:3001)**.
 
 ---
 

@@ -82,7 +82,7 @@ Mission Control provides three interfaces for autonomous agents:
 claude mcp add mission-control -- node /path/to/mission-control/scripts/mc-mcp-server.cjs
 
 # Environment config:
-MC_URL=http://127.0.0.1:3000 MC_API_KEY=<key>
+MISSION_CONTROL_URL=http://localhost:3001 MC_API_KEY=<key>
 ```
 35 tools: agents, tasks, sessions, memory, soul, comments, tokens, skills, cron, status.
 See `docs/cli-agent-control.md` for full tool list.

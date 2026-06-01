@@ -11,14 +11,14 @@ function loadMcConfig() {
     const p = JSON.parse(readFileSync(profilePath, 'utf8'))
     return { url: p.url, apiKey: p.apiKey }
   } catch {
-    return { url: process.env.MC_URL, apiKey: process.env.MC_API_KEY }
+    return { url: process.env.MISSION_CONTROL_URL || process.env.MC_URL, apiKey: process.env.MC_API_KEY }
   }
 }
 
 const { url: MC_URL, apiKey: MC_API_KEY } = loadMcConfig()
 
 if (!MC_URL || !MC_API_KEY) {
-  console.error('MC config not found. Set MC_URL + MC_API_KEY or configure ~/.mission-control/profiles/default.json')
+  console.error('MC config not found. Set MISSION_CONTROL_URL + MC_API_KEY or configure ~/.mission-control/profiles/default.json')
   process.exit(1)
 }
 

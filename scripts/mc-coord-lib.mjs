@@ -9,7 +9,7 @@ export function loadMcConfig() {
     ))
     return { url: p.url, apiKey: p.apiKey }
   } catch {
-    return { url: process.env.MC_URL, apiKey: process.env.MC_API_KEY }
+    return { url: process.env.MISSION_CONTROL_URL || process.env.MC_URL, apiKey: process.env.MC_API_KEY }
   }
 }
 

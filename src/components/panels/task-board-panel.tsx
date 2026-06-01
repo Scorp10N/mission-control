@@ -953,7 +953,7 @@ export function TaskBoardPanel() {
             </div>
 
             {/* Column Body */}
-            <div className="flex-1 p-2.5 space-y-2.5 min-h-32 h-full overflow-y-auto">
+            <div className="flex-1 p-2.5 space-y-2.5 min-h-32 overflow-y-auto">
               {tasksByStatus[column.key]?.map(task => (
                 <div
                   key={task.id}

@@ -104,6 +104,61 @@ const STATUS_COLUMN_KEYS = [
   { key: 'failed', titleKey: 'colFailed', color: 'bg-red-500/20 text-red-400' },
 ]
 
+const COLUMN_PREFS_KEY = 'mc-column-prefs-v1'
+
+function useColumnPreferences(defaults: typeof STATUS_COLUMN_KEYS) {
+  const defaultKeys = defaults.map(c => c.key)
+
+  const load = () => {
+    try {
+      const raw = localStorage.getItem(COLUMN_PREFS_KEY)
+      if (!raw) return { order: defaultKeys, hidden: [] as string[] }
+      const p = JSON.parse(raw)
+      const storedOrder: string[] = Array.isArray(p.order) ? p.order : defaultKeys
+      const merged = storedOrder.filter(k => defaultKeys.includes(k))
+      const added = defaultKeys.filter(k => !merged.includes(k))
+      return { order: [...merged, ...added], hidden: Array.isArray(p.hidden) ? p.hidden : [] }
+    } catch { return { order: defaultKeys, hidden: [] as string[] } }
+  }
+
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => load().order)
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set(load().hidden))
+
+  const persist = useCallback((order: string[], hidden: Set<string>) => {
+    try { localStorage.setItem(COLUMN_PREFS_KEY, JSON.stringify({ order, hidden: [...hidden] })) } catch {}
+  }, [])
+
+  const reorderColumns = useCallback((fromKey: string, toKey: string) => {
+    setColumnOrder(prev => {
+      const next = [...prev]
+      const fi = next.indexOf(fromKey), ti = next.indexOf(toKey)
+      if (fi === -1 || ti === -1 || fi === ti) return prev
+      next.splice(fi, 1)
+      next.splice(ti, 0, fromKey)
+      setHiddenKeys(h => { persist(next, h); return h })
+      return next
+    })
+  }, [persist])
+
+  const toggleColumn = useCallback((key: string) => {
+    setHiddenKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      setColumnOrder(o => { persist(o, next); return o })
+      return next
+    })
+  }, [persist])
+
+  const resetPrefs = useCallback(() => {
+    const empty = new Set<string>()
+    setColumnOrder(defaultKeys)
+    setHiddenKeys(empty)
+    persist(defaultKeys, empty)
+  }, [defaultKeys, persist])
+
+  return { columnOrder, hiddenKeys, reorderColumns, toggleColumn, resetPrefs }
+}
+
 const AWAITING_OWNER_KEYWORDS = [
   'waiting for', 'waiting on', 'needs human', 'manual action',
   'account creation', 'browser login', 'approval needed',
@@ -388,7 +443,9 @@ interface SpawnFormData {
 
 export function TaskBoardPanel() {
   const t = useTranslations('taskBoard')
-  const statusColumns = STATUS_COLUMN_KEYS.map(col => ({ ...col, title: t(col.titleKey as any) }))
+  const allStatusColumns = STATUS_COLUMN_KEYS.map(col => ({ ...col, title: t(col.titleKey as any) }))
+  // statusColumns is derived after preferences are loaded (inside component body after hooks)
+  const statusColumns = allStatusColumns
   const { tasks: storeTasks, setTasks: storeSetTasks, selectedTask, setSelectedTask, activeProject, availableModels, spawnRequests, addSpawnRequest, updateSpawnRequest, dashboardMode } = useMissionControl()
   const router = useRouter()
   const pathname = usePathname()
@@ -402,6 +459,11 @@ export function TaskBoardPanel() {
   const [error, setError] = useState<string | null>(null)
   const [aegisMap, setAegisMap] = useState<Record<number, boolean>>({})
   const [draggedTask, setDraggedTask] = useState<Task | null>(null)
+  const [draggedColumnKey, setDraggedColumnKey] = useState<string | null>(null)
+  const [dragOverColumnKey, setDragOverColumnKey] = useState<string | null>(null)
+  const [showColumnSettings, setShowColumnSettings] = useState(false)
+  const columnSettingsRef = useRef<HTMLDivElement>(null)
+  const { columnOrder, hiddenKeys, reorderColumns, toggleColumn, resetPrefs } = useColumnPreferences(STATUS_COLUMN_KEYS)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showProjectManager, setShowProjectManager] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
@@ -417,6 +479,18 @@ export function TaskBoardPanel() {
   const [gnapSyncing, setGnapSyncing] = useState(false)
   const isLocal = dashboardMode === 'local'
   const dragCounter = useRef(0)
+
+  // Close column settings popover on outside click
+  useEffect(() => {
+    if (!showColumnSettings) return
+    const handler = (e: MouseEvent) => {
+      if (columnSettingsRef.current && !columnSettingsRef.current.contains(e.target as Node)) {
+        setShowColumnSettings(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showColumnSettings])
   const selectedTaskIdFromUrl = Number.parseInt(searchParams.get('taskId') || '', 10)
 
   const updateTaskUrl = useCallback((taskId: number | null, mode: 'push' | 'replace' = 'push') => {
@@ -829,6 +903,67 @@ export function TaskBoardPanel() {
           <Button onClick={() => setShowCreateModal(true)}>
             {t('newTask')}
           </Button>
+          {/* Column settings */}
+          <div className="relative" ref={columnSettingsRef}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setShowColumnSettings(v => !v)}
+              title="Column settings"
+              className={showColumnSettings ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}
+            >
+              <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="1" y="4" width="14" height="2" rx="1" />
+                <rect x="1" y="10" width="14" height="2" rx="1" />
+                <circle cx="5" cy="5" r="1.5" fill="currentColor" stroke="none" />
+                <circle cx="11" cy="11" r="1.5" fill="currentColor" stroke="none" />
+              </svg>
+            </Button>
+            {showColumnSettings && (
+              <div className="absolute right-0 top-full mt-2 z-50 w-56 bg-card border border-border rounded-xl shadow-xl shadow-black/20 overflow-hidden">
+                <div className="px-3 py-2.5 border-b border-border/50 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-foreground/80 tracking-wide uppercase">Columns</span>
+                  <button
+                    onClick={resetPrefs}
+                    className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+                  >
+                    Reset
+                  </button>
+                </div>
+                <div className="p-1.5 space-y-0.5 max-h-72 overflow-y-auto">
+                  {columnOrder.map(key => {
+                    const col = allStatusColumns.find(c => c.key === key)
+                    if (!col) return null
+                    const isHidden = hiddenKeys.has(key)
+                    return (
+                      <label
+                        key={key}
+                        className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-surface-1 cursor-pointer transition-colors group"
+                      >
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${col.color.split(' ')[0].replace('/20', '/60')}`} />
+                        <span className={`flex-1 text-xs ${isHidden ? 'text-muted-foreground/40 line-through' : 'text-foreground/80'}`}>
+                          {col.title}
+                        </span>
+                        <div
+                          onClick={(e) => { e.preventDefault(); toggleColumn(key) }}
+                          className={`w-7 h-4 rounded-full transition-colors relative cursor-pointer shrink-0 ${
+                            isHidden ? 'bg-muted/30' : 'bg-primary/60'
+                          }`}
+                        >
+                          <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${
+                            isHidden ? 'translate-x-0.5' : 'translate-x-3.5'
+                          }`} />
+                        </div>
+                      </label>
+                    )
+                  })}
+                </div>
+                <div className="px-3 py-2 border-t border-border/50">
+                  <p className="text-[10px] text-muted-foreground/50">Drag column headers to reorder</p>
+                </div>
+              </div>
+            )}
+          </div>
           <Button variant="ghost" size="icon-sm" onClick={fetchData} title={t('refresh')}>
             <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M1.5 8a6.5 6.5 0 0 1 11.25-4.5M14.5 8a6.5 6.5 0 0 1-11.25 4.5" />
@@ -933,20 +1068,56 @@ export function TaskBoardPanel() {
 
       {/* Kanban Board */}
       <div className="flex-1 min-h-0 flex gap-4 p-4 overflow-x-auto" role="region" aria-label={t('taskBoard')}>
-        {statusColumns.map(column => (
+        {columnOrder
+          .filter(key => !hiddenKeys.has(key))
+          .map(key => allStatusColumns.find(c => c.key === key)!)
+          .filter(Boolean)
+          .map(column => (
           <div
             key={column.key}
             role="region"
             aria-label={t('columnAriaLabel', { title: column.title, count: tasksByStatus[column.key]?.length || 0 })}
-            className="flex-1 min-w-80 min-h-0 bg-surface-0 border border-border/60 rounded-xl flex flex-col transition-colors duration-200 [&.drag-over]:border-primary/40 [&.drag-over]:bg-primary/[0.02]"
-            onDragEnter={(e) => handleDragEnter(e, column.key)}
-            onDragLeave={handleDragLeave}
-            onDragOver={handleDragOver}
-            onDrop={(e) => handleDrop(e, column.key)}
+            className={`flex-1 min-w-80 min-h-0 bg-surface-0 border border-border/60 rounded-xl flex flex-col transition-all duration-200 [&.drag-over]:border-primary/40 [&.drag-over]:bg-primary/[0.02] ${
+              draggedColumnKey && dragOverColumnKey === column.key && draggedColumnKey !== column.key
+                ? 'border-primary/60 ring-1 ring-primary/30 scale-[0.99]'
+                : ''
+            } ${draggedColumnKey === column.key ? 'opacity-50' : ''}`}
+            onDragEnter={(e) => { if (!draggedColumnKey) handleDragEnter(e, column.key) }}
+            onDragLeave={(e) => { if (!draggedColumnKey) handleDragLeave(e) }}
+            onDragOver={(e) => {
+              if (draggedColumnKey) { e.preventDefault(); setDragOverColumnKey(column.key) }
+              else handleDragOver(e)
+            }}
+            onDrop={(e) => {
+              if (draggedColumnKey) {
+                e.preventDefault()
+                reorderColumns(draggedColumnKey, column.key)
+                setDraggedColumnKey(null)
+                setDragOverColumnKey(null)
+              } else {
+                handleDrop(e, column.key)
+              }
+            }}
           >
-            {/* Column Header */}
-            <div className={`${column.color} px-4 py-3 rounded-t-xl flex justify-between items-center border-b border-border/30`}>
-              <h3 className="font-semibold text-sm tracking-wide">{column.title}</h3>
+            {/* Column Header — draggable for reorder */}
+            <div
+              draggable
+              onDragStart={(e) => {
+                e.stopPropagation()
+                setDraggedColumnKey(column.key)
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('text/plain', column.key)
+              }}
+              onDragEnd={() => { setDraggedColumnKey(null); setDragOverColumnKey(null) }}
+              className={`${column.color} px-3 py-3 rounded-t-xl flex items-center gap-2 border-b border-border/30 cursor-grab active:cursor-grabbing group select-none`}
+            >
+              {/* Drag grip */}
+              <svg className="w-3 h-3 shrink-0 opacity-30 group-hover:opacity-60 transition-opacity" viewBox="0 0 16 16" fill="currentColor">
+                <circle cx="5" cy="3" r="1.2" /><circle cx="11" cy="3" r="1.2" />
+                <circle cx="5" cy="8" r="1.2" /><circle cx="11" cy="8" r="1.2" />
+                <circle cx="5" cy="13" r="1.2" /><circle cx="11" cy="13" r="1.2" />
+              </svg>
+              <h3 className="font-semibold text-sm tracking-wide flex-1">{column.title}</h3>
               <span className="text-xs font-mono bg-white/10 px-2 py-0.5 rounded-md min-w-[1.75rem] text-center">
                 {tasksByStatus[column.key]?.length || 0}
               </span>

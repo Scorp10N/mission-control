@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "mission-control": {
+      "command": "node",
+      "args": ["/home/yarin/Projects/mission-control/scripts/mc-mcp-server.cjs"],
+      "env": {
+        "MC_URL": "http://127.0.0.1:3001",
+        "MC_API_KEY": "mc_45c23f6d58664727a64a77f879b1911be0fbb3486242244e"
+      }
+    }
+  }
+}

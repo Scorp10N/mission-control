@@ -335,6 +335,80 @@ Templates define model tier, tool permissions, and default configuration. Availa
 - `researcher` — Read-only tools plus web and memory access
 - `reviewer` — Read-only tools for code review and quality checks
 
+## MCP Server Setup
+
+Mission Control ships a native MCP server (stdio transport, JSON-RPC 2.0) at:
+
+```
+/home/yarin/Projects/mission-control/scripts/mc-mcp-server.cjs
+```
+
+This exposes 35+ MC tools natively inside agent sessions (tasks, agents, comments, memory, soul, events, skills), removing the need for shell `mc` CLI calls.
+
+### Verify the server works
+
+```bash
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
+  | MC_URL=http://127.0.0.1:3001 MC_API_KEY=<key> node /home/yarin/Projects/mission-control/scripts/mc-mcp-server.cjs
+```
+
+Expected response includes `"serverInfo":{"name":"mission-control","version":"2.0.1"}`.
+
+### gemini-cli
+
+Uses `gemini mcp add` (user scope):
+
+```bash
+gemini mcp add mission-control node --scope user \
+  -e MC_URL=http://127.0.0.1:3001 \
+  -e MC_API_KEY=<key> \
+  -- /home/yarin/Projects/mission-control/scripts/mc-mcp-server.cjs
+```
+
+Verify: `gemini mcp list`
+
+### codex
+
+Uses `codex mcp add` (global):
+
+```bash
+codex mcp add mission-control \
+  --env MC_URL=http://127.0.0.1:3001 \
+  --env MC_API_KEY=<key> \
+  -- node /home/yarin/Projects/mission-control/scripts/mc-mcp-server.cjs
+```
+
+Verify: `codex mcp list`
+
+### claude-code
+
+Use a per-project `.mcp.json` (avoids touching global `~/.claude/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "mission-control": {
+      "command": "node",
+      "args": ["/home/yarin/Projects/mission-control/scripts/mc-mcp-server.cjs"],
+      "env": {
+        "MC_URL": "http://127.0.0.1:3001",
+        "MC_API_KEY": "<key>"
+      }
+    }
+  }
+}
+```
+
+A `.mcp.json` is already in place at `/home/yarin/Projects/mission-control/.mcp.json`.
+
+To apply globally instead, add the same block under `"mcpServers"` in `~/.claude/settings.json` (requires user approval).
+
+### copilot-cli (GitHub Copilot CLI)
+
+Configured via the Copilot space SKILL.md or a project `.github/copilot-instructions.md` MCP block. The `mission-control-mc_*` tools are available natively when the MC Copilot space is active.
+
+---
+
 ## What's Next
 
 - **[Quickstart](quickstart.md)** — 5-minute first agent tutorial

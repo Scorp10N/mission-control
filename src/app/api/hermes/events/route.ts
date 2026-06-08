@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { event, session_id, source, timestamp, agent_name } = body
+    const { event, session_id, source, timestamp, agent_name, message, response, tool_names, iteration } = body
     const workspaceId = auth.user.workspace_id ?? 1
 
     if (!event) {
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
       0,
       agent_name || 'hermes',
       `Hermes ${event}: ${session_id || 'unknown'} via ${source || 'cli'}`,
-      { session_id, source, timestamp, agent_name },
+      { session_id, source, timestamp, agent_name, message, response, tool_names, iteration },
       workspaceId
     )
 

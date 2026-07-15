@@ -50,10 +50,20 @@ describe('buildMcpTools — role scoping', () => {
     expect(operatorTools).toContain('mc_broadcast_task')
   })
 
-  it('admin gets the same tools as operator (no admin-only tools yet)', () => {
-    const operatorTools = Object.keys(registeredTools('operator')).sort()
-    const adminTools = Object.keys(registeredTools('admin')).sort()
-    expect(adminTools).toEqual(operatorTools)
+  it('admin gets operator tools plus admin-only tools', () => {
+    const operatorTools = new Set(Object.keys(registeredTools('operator')))
+    const adminTools = Object.keys(registeredTools('admin'))
+    for (const t of operatorTools) {
+      expect(adminTools).toContain(t)
+    }
+    expect(adminTools).toContain('mc_delete_agent')
+    expect(adminTools).toContain('mc_list_agent_keys')
+    expect(adminTools).toContain('mc_create_agent_key')
+    expect(adminTools).toContain('mc_revoke_agent_key')
+    expect(adminTools).toContain('mc_manage_cron')
+    // Operator must NOT have admin-only tools
+    expect(operatorTools.has('mc_delete_agent')).toBe(false)
+    expect(operatorTools.has('mc_manage_cron')).toBe(false)
   })
 })
 
@@ -61,32 +71,37 @@ describe('buildMcpTools — role scoping', () => {
 
 const EXPECTED_TOOLS = [
   'mc_add_comment', 'mc_agent_attribution', 'mc_agent_costs', 'mc_agent_diagnostics',
-  'mc_attach_eval', 'mc_broadcast_task', 'mc_clear_memory', 'mc_continue_session',
-  'mc_control_session', 'mc_costs_by_agent', 'mc_create_run', 'mc_create_task',
-  'mc_dashboard', 'mc_eval_leaderboard', 'mc_get_agent', 'mc_get_run', 'mc_get_task',
+  'mc_attach_eval', 'mc_broadcast_task', 'mc_capabilities', 'mc_clear_memory',
+  'mc_continue_session', 'mc_control_session', 'mc_costs_by_agent', 'mc_create_agent',
+  'mc_create_agent_key', 'mc_create_run', 'mc_create_task', 'mc_dashboard',
+  'mc_delete_agent', 'mc_delete_skill', 'mc_delete_task', 'mc_disconnect',
+  'mc_eval_leaderboard', 'mc_gateway_status', 'mc_get_agent', 'mc_get_run', 'mc_get_task',
   'mc_health', 'mc_heartbeat', 'mc_knowledge_consolidate', 'mc_knowledge_gaps',
-  'mc_knowledge_health', 'mc_list_agents', 'mc_list_comments', 'mc_list_connections',
-  'mc_list_cron', 'mc_list_runs', 'mc_list_sessions', 'mc_list_skills',
-  'mc_list_soul_templates', 'mc_list_tasks', 'mc_poll_task_queue', 'mc_read_knowledge_file',
+  'mc_knowledge_health', 'mc_list_agent_keys', 'mc_list_agents', 'mc_list_comments',
+  'mc_list_connections', 'mc_list_cron', 'mc_list_models', 'mc_list_runs',
+  'mc_list_sessions', 'mc_list_skills', 'mc_list_soul_templates', 'mc_list_tasks',
+  'mc_manage_cron', 'mc_poll_task_queue', 'mc_read_knowledge_file',
   'mc_read_memory', 'mc_read_skill', 'mc_read_soul', 'mc_rebuild_search_index',
-  'mc_register_connection', 'mc_run_provenance', 'mc_search_knowledge',
-  'mc_session_transcript', 'mc_status', 'mc_token_stats', 'mc_update_run', 'mc_update_task',
-  'mc_wake_agent', 'mc_write_knowledge_file', 'mc_write_memory', 'mc_write_soul',
+  'mc_register_connection', 'mc_revoke_agent_key', 'mc_run_provenance',
+  'mc_search_knowledge', 'mc_session_transcript', 'mc_status', 'mc_token_export',
+  'mc_token_stats', 'mc_token_task_costs', 'mc_token_trends', 'mc_update_agent',
+  'mc_update_run', 'mc_update_task', 'mc_upsert_skill', 'mc_wake_agent',
+  'mc_write_knowledge_file', 'mc_write_memory', 'mc_write_soul',
 ].sort()
 
 describe('buildMcpTools — parity with mc-mcp-server.cjs', () => {
-  it('admin tool set matches the 49 tools in the stdio server', () => {
+  it('admin tool set matches the 66 tools in the stdio server', () => {
     const adminTools = getRegisteredToolNames('admin')
     expect(adminTools).toEqual(EXPECTED_TOOLS)
   })
 
-  it('stdio server has exactly 49 tools', () => {
+  it('stdio server has exactly 66 tools', () => {
     const cjs = readFileSync(
       resolve(process.cwd(), 'scripts/mc-mcp-server.cjs'),
       'utf-8',
     )
     const names = [...cjs.matchAll(/name: '(mc_[^']+)'/g)].map(m => m[1]).sort()
-    expect(names).toHaveLength(49)
+    expect(names).toHaveLength(66)
     expect(names).toEqual(EXPECTED_TOOLS)
   })
 })

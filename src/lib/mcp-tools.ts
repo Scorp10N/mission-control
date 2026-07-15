@@ -89,6 +89,30 @@ export function buildMcpTools(
     async ({ days }) => text(await mc('GET', `/api/tokens/by-agent?days=${days ?? 30}`))
   )
 
+  server.tool('mc_token_task_costs',
+    { timeframe: z.string().optional() },
+    async ({ timeframe }) => {
+      const qs = `?action=task-costs${timeframe ? `&timeframe=${encodeURIComponent(timeframe)}` : ''}`
+      return text(await mc('GET', `/api/tokens${qs}`))
+    }
+  )
+
+  server.tool('mc_token_trends',
+    { timeframe: z.string().optional() },
+    async ({ timeframe }) => {
+      const qs = `?action=trends${timeframe ? `&timeframe=${encodeURIComponent(timeframe)}` : ''}`
+      return text(await mc('GET', `/api/tokens${qs}`))
+    }
+  )
+
+  server.tool('mc_token_export',
+    { timeframe: z.string().optional() },
+    async ({ timeframe }) => {
+      const qs = `?action=export&format=json${timeframe ? `&timeframe=${encodeURIComponent(timeframe)}` : ''}`
+      return text(await mc('GET', `/api/tokens${qs}`))
+    }
+  )
+
   server.tool('mc_token_stats',
     { timeframe: z.string().optional() },
     async ({ timeframe }) => {
@@ -235,6 +259,18 @@ export function buildMcpTools(
 
   server.tool('mc_status', {},
     async () => text(await mc('GET', '/api/status?action=overview'))
+  )
+
+  server.tool('mc_gateway_status', {},
+    async () => text(await mc('GET', '/api/status?action=gateway'))
+  )
+
+  server.tool('mc_list_models', {},
+    async () => text(await mc('GET', '/api/status?action=models'))
+  )
+
+  server.tool('mc_capabilities', {},
+    async () => text(await mc('GET', '/api/status?action=capabilities'))
   )
 
   // Runs (read)
@@ -418,11 +454,91 @@ export function buildMcpTools(
         text(await mc('PUT', `/api/v1/runs/${encodeURIComponent(run_id)}/eval`, evalData))
     )
 
+    server.tool('mc_create_agent',
+      {
+        name: z.string(),
+        role: z.string().optional(),
+        openclaw_id: z.string().optional(),
+        template: z.string().optional(),
+        status: z.string().optional(),
+        gateway_config: z.record(z.string(), z.unknown()).optional(),
+      },
+      async (args) => text(await mc('POST', '/api/agents', args))
+    )
+
+    server.tool('mc_update_agent',
+      {
+        id: z.union([z.string(), z.number()]),
+        role: z.string().optional(),
+        gateway_config: z.record(z.string(), z.unknown()).optional(),
+        write_to_gateway: z.boolean().optional(),
+      },
+      async ({ id, ...updates }) => text(await mc('PUT', `/api/agents/${id}`, updates))
+    )
+
+    server.tool('mc_upsert_skill',
+      { source: z.string(), name: z.string(), content: z.string() },
+      async (args) => text(await mc('PUT', '/api/skills', args))
+    )
+
+    server.tool('mc_delete_skill',
+      { source: z.string(), name: z.string() },
+      async ({ source, name }) =>
+        text(await mc('DELETE', `/api/skills?source=${encodeURIComponent(source)}&name=${encodeURIComponent(name)}`))
+    )
+
+    server.tool('mc_delete_task',
+      { id: z.union([z.string(), z.number()]) },
+      async ({ id }) => text(await mc('DELETE', `/api/tasks/${id}`))
+    )
+
+    server.tool('mc_disconnect',
+      { connection_id: z.string() },
+      async ({ connection_id }) => text(await mc('DELETE', '/api/connect', { connection_id }))
+    )
+
   } // end operator
 
   // ─── ADMIN TOOLS ─────────────────────────────────────────────────────────
-  // No additional tools beyond operator in the current tool set.
-  // Extend here when admin-only tools are needed (API key management, agent delete, etc.)
+  if (role === 'admin') {
+
+    server.tool('mc_delete_agent',
+      { id: z.union([z.string(), z.number()]) },
+      async ({ id }) => text(await mc('DELETE', `/api/agents/${id}`))
+    )
+
+    server.tool('mc_list_agent_keys',
+      { id: z.union([z.string(), z.number()]) },
+      async ({ id }) => text(await mc('GET', `/api/agents/${id}/keys`))
+    )
+
+    server.tool('mc_create_agent_key',
+      {
+        id: z.union([z.string(), z.number()]),
+        name: z.string().optional(),
+        scopes: z.array(z.string()).optional(),
+        expires_at: z.number().optional(),
+        expires_in_days: z.number().optional(),
+      },
+      async ({ id, ...body }) => text(await mc('POST', `/api/agents/${id}/keys`, body))
+    )
+
+    server.tool('mc_revoke_agent_key',
+      { id: z.union([z.string(), z.number()]), key_id: z.number() },
+      async ({ id, key_id }) => text(await mc('DELETE', `/api/agents/${id}/keys`, { key_id }))
+    )
+
+    server.tool('mc_manage_cron',
+      {
+        action: z.enum(['toggle', 'trigger']),
+        jobId: z.string().optional(),
+        jobName: z.string().optional(),
+        mode: z.enum(['due', 'force']).optional(),
+      },
+      async (args) => text(await mc('POST', '/api/cron', args))
+    )
+
+  } // end admin
 }
 
 /**

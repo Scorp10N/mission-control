@@ -84,7 +84,7 @@ claude mcp add mission-control -- node /path/to/mission-control/scripts/mc-mcp-s
 # Environment config:
 MISSION_CONTROL_URL=http://localhost:3001 MC_API_KEY=<key>
 ```
-35 tools: agents, tasks, sessions, memory, soul, comments, tokens, skills, cron, status.
+66 tools: agents (incl. lifecycle + API keys), tasks, sessions, memory, soul, comments, tokens, skills, cron, status, runs/evals, connections.
 See `docs/cli-agent-control.md` for full tool list.
 
 ### CLI

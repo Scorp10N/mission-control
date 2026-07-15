@@ -123,6 +123,87 @@ const TOOLS = [
     handler: async ({ id }) => api('GET', `/api/agents/${id}/diagnostics`),
   },
   {
+    name: 'mc_create_agent',
+    description: 'Create a new agent',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Agent name' },
+        role: { type: 'string', description: 'Agent role/type' },
+        openclaw_id: { type: 'string', description: 'OpenClaw workspace ID (defaults to slugified name)' },
+        template: { type: 'string', description: 'SOUL template to apply on creation' },
+        status: { type: 'string', description: 'Initial status (default offline)' },
+        gateway_config: { type: 'object', description: 'Gateway config overrides' },
+      },
+      required: ['name'],
+    },
+    handler: async (args) => api('POST', '/api/agents', args),
+  },
+  {
+    name: 'mc_update_agent',
+    description: 'Update an agent\'s role or gateway config',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: ['string', 'number'], description: 'Agent ID' },
+        role: { type: 'string', description: 'New role' },
+        gateway_config: { type: 'object', description: 'Gateway config fields to merge in' },
+        write_to_gateway: { type: 'boolean', description: 'Also write config to the OpenClaw gateway file' },
+      },
+      required: ['id'],
+    },
+    handler: async ({ id, ...updates }) => api('PUT', `/api/agents/${id}`, updates),
+  },
+  {
+    name: 'mc_delete_agent',
+    description: 'Delete an agent',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: ['string', 'number'], description: 'Agent ID' } },
+      required: ['id'],
+    },
+    handler: async ({ id }) => api('DELETE', `/api/agents/${id}`),
+  },
+  {
+    name: 'mc_list_agent_keys',
+    description: 'List API keys issued for an agent',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: ['string', 'number'], description: 'Agent ID' } },
+      required: ['id'],
+    },
+    handler: async ({ id }) => api('GET', `/api/agents/${id}/keys`),
+  },
+  {
+    name: 'mc_create_agent_key',
+    description: 'Create a new API key for an agent. Returns the raw key once — it is not retrievable afterward.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: ['string', 'number'], description: 'Agent ID' },
+        name: { type: 'string', description: 'Key name/label' },
+        scopes: { type: 'array', items: { type: 'string' }, description: 'Scopes: viewer, operator, admin, agent:self, agent:diagnostics, agent:attribution, agent:heartbeat, agent:messages' },
+        expires_at: { type: 'number', description: 'Unix timestamp expiry' },
+        expires_in_days: { type: 'number', description: 'Expire N days from now (1-3650)' },
+      },
+      required: ['id'],
+    },
+    handler: async ({ id, ...body }) => api('POST', `/api/agents/${id}/keys`, body),
+  },
+  {
+    name: 'mc_revoke_agent_key',
+    description: 'Revoke an agent API key',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: ['string', 'number'], description: 'Agent ID' },
+        key_id: { type: 'number', description: 'Key ID to revoke' },
+      },
+      required: ['id', 'key_id'],
+    },
+    handler: async ({ id, key_id }) => api('DELETE', `/api/agents/${id}/keys`, { key_id }),
+  },
+  {
     name: 'mc_agent_attribution',
     description: 'Get cost attribution, audit trail, and mutation history for an agent',
     inputSchema: {
@@ -427,6 +508,16 @@ const TOOLS = [
       return api('POST', `/api/tasks/${id}/comments`, body);
     },
   },
+  {
+    name: 'mc_delete_task',
+    description: 'Delete a task (comments cascade)',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: ['string', 'number'], description: 'Task ID' } },
+      required: ['id'],
+    },
+    handler: async ({ id }) => api('DELETE', `/api/tasks/${id}`),
+  },
 
   // --- Sessions ---
   {
@@ -502,6 +593,16 @@ const TOOLS = [
     },
     handler: async (args) => api('POST', '/api/connect', args),
   },
+  {
+    name: 'mc_disconnect',
+    description: 'Disconnect an active agent connection',
+    inputSchema: {
+      type: 'object',
+      properties: { connection_id: { type: 'string', description: 'Connection ID to disconnect' } },
+      required: ['connection_id'],
+    },
+    handler: async ({ connection_id }) => api('DELETE', '/api/connect', { connection_id }),
+  },
 
   // --- Tokens & Costs ---
   {
@@ -549,6 +650,54 @@ const TOOLS = [
     handler: async ({ days }) =>
       api('GET', `/api/tokens/by-agent?days=${days || 30}`),
   },
+  {
+    name: 'mc_token_task_costs',
+    description: 'Get per-task cost breakdown attributed from token usage records',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        timeframe: { type: 'string', description: 'Timeframe: hour, day, week, month, all' },
+      },
+      required: [],
+    },
+    handler: async ({ timeframe }) => {
+      let qs = '?action=task-costs';
+      if (timeframe) qs += `&timeframe=${encodeURIComponent(timeframe)}`;
+      return api('GET', `/api/tokens${qs}`);
+    },
+  },
+  {
+    name: 'mc_token_trends',
+    description: 'Get hourly token usage/cost trends over the last 24 hours',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        timeframe: { type: 'string', description: 'Timeframe: hour, day, week, month, all' },
+      },
+      required: [],
+    },
+    handler: async ({ timeframe }) => {
+      let qs = '?action=trends';
+      if (timeframe) qs += `&timeframe=${encodeURIComponent(timeframe)}`;
+      return api('GET', `/api/tokens${qs}`);
+    },
+  },
+  {
+    name: 'mc_token_export',
+    description: 'Export full token usage data (JSON) with per-model and per-session breakdowns',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        timeframe: { type: 'string', description: 'Timeframe: hour, day, week, month, all' },
+      },
+      required: [],
+    },
+    handler: async ({ timeframe }) => {
+      let qs = '?action=export&format=json';
+      if (timeframe) qs += `&timeframe=${encodeURIComponent(timeframe)}`;
+      return api('GET', `/api/tokens${qs}`);
+    },
+  },
 
   // --- Skills ---
   {
@@ -571,6 +720,34 @@ const TOOLS = [
     handler: async ({ source, name }) =>
       api('GET', `/api/skills?mode=content&source=${encodeURIComponent(source)}&name=${encodeURIComponent(name)}`),
   },
+  {
+    name: 'mc_upsert_skill',
+    description: 'Create or overwrite a skill\'s content',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source: { type: 'string', description: 'Skill source (e.g. workspace, system)' },
+        name: { type: 'string', description: 'Skill name' },
+        content: { type: 'string', description: 'Skill markdown content' },
+      },
+      required: ['source', 'name', 'content'],
+    },
+    handler: async (args) => api('PUT', '/api/skills', args),
+  },
+  {
+    name: 'mc_delete_skill',
+    description: 'Delete a skill',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source: { type: 'string', description: 'Skill source (e.g. workspace, system)' },
+        name: { type: 'string', description: 'Skill name' },
+      },
+      required: ['source', 'name'],
+    },
+    handler: async ({ source, name }) =>
+      api('DELETE', `/api/skills?source=${encodeURIComponent(source)}&name=${encodeURIComponent(name)}`),
+  },
 
   // --- Cron ---
   {
@@ -578,6 +755,21 @@ const TOOLS = [
     description: 'List all cron jobs',
     inputSchema: { type: 'object', properties: {}, required: [] },
     handler: async () => api('GET', '/api/cron'),
+  },
+  {
+    name: 'mc_manage_cron',
+    description: 'Toggle (enable/disable) or trigger a cron job',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', description: "'toggle' or 'trigger'" },
+        jobId: { type: 'string', description: 'Job ID' },
+        jobName: { type: 'string', description: 'Job name (alternative to jobId)' },
+        mode: { type: 'string', description: "'due' or 'force' (trigger only)" },
+      },
+      required: ['action'],
+    },
+    handler: async (args) => api('POST', '/api/cron', args),
   },
 
   // --- Status ---
@@ -598,6 +790,24 @@ const TOOLS = [
     description: 'Get system status overview (uptime, memory, disk, sessions, processes)',
     inputSchema: { type: 'object', properties: {}, required: [] },
     handler: async () => api('GET', '/api/status?action=overview'),
+  },
+  {
+    name: 'mc_gateway_status',
+    description: 'Get gateway connection status',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+    handler: async () => api('GET', '/api/status?action=gateway'),
+  },
+  {
+    name: 'mc_list_models',
+    description: 'List models available to the gateway',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+    handler: async () => api('GET', '/api/status?action=models'),
+  },
+  {
+    name: 'mc_capabilities',
+    description: 'Get Mission Control runtime capabilities (installed integrations, subscription state)',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+    handler: async () => api('GET', '/api/status?action=capabilities'),
   },
 
   // --- Runs (agent-run protocol) ---

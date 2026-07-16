@@ -484,7 +484,7 @@ export function buildMcpTools(
     server.tool('mc_delete_skill',
       { source: z.string(), name: z.string() },
       async ({ source, name }) =>
-        text(await mc('DELETE', `/api/skills?source=${encodeURIComponent(source)}&name=${encodeURIComponent(name)}`))
+        text(await mc('DELETE', '/api/skills', { source, name, confirmation: 'delete_skill' }))
     )
 
     server.tool('mc_delete_task',

@@ -11,7 +11,7 @@ function mockResponse(status: number, body: unknown = {}, opts: { json?: boolean
   })
 }
 
-describe('apiFetch — global 401 / 403 / 5xx / network handling', () => {
+describe('apiFetch — global HTTP and network error handling', () => {
   let dispatched: CustomEvent[] = []
   let originalHref = ''
   let authExpiredListener: ((e: Event) => void) | null = null
@@ -79,6 +79,43 @@ describe('apiFetch — global 401 / 403 / 5xx / network handling', () => {
     expect(window.location.href).toBe('http://127.0.0.1:3000/cost-tracker')
   })
 
+  it('preserves the upstream recovery message and payload on 404', async () => {
+    const payload = { error: 'Release tag v9.9.9 not found in remote' }
+    global.fetch = vi.fn().mockResolvedValue(mockResponse(404, payload))
+
+    await expect(apiFetch('/api/releases/update')).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      status: 404,
+      message: payload.error,
+      payload,
+    })
+  })
+
+  it.each([400, 409, 422, 429])(
+    'throws CLIENT_ERROR with the upstream payload on %i',
+    async (status) => {
+      const payload = { error: `request rejected with ${status}`, field: 'name' }
+      global.fetch = vi.fn().mockResolvedValue(mockResponse(status, payload))
+
+      await expect(apiFetch('/api/tasks', { method: 'POST' })).rejects.toMatchObject({
+        code: 'CLIENT_ERROR',
+        status,
+        message: payload.error,
+        payload,
+      })
+    }
+  )
+
+  it('uses a status fallback when a client error has no upstream message', async () => {
+    global.fetch = vi.fn().mockResolvedValue(mockResponse(400, { field: 'title' }))
+
+    await expect(apiFetch('/api/tasks', { method: 'POST' })).rejects.toMatchObject({
+      code: 'CLIENT_ERROR',
+      status: 400,
+      message: 'Request failed with status 400',
+    })
+  })
+
   it('throws SERVER_ERROR on 500 with upstream message', async () => {
     global.fetch = vi.fn().mockResolvedValue(mockResponse(500, { error: 'database is locked' }))
     await expect(apiFetch('/api/tokens')).rejects.toMatchObject({
@@ -110,5 +147,27 @@ describe('apiFetch — global 401 / 403 / 5xx / network handling', () => {
     global.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
     const data = await apiFetch('/api/sessions/123', { method: 'DELETE' })
     expect(data).toBeUndefined()
+  })
+
+  it('returns a successful raw response when requested', async () => {
+    global.fetch = vi.fn().mockResolvedValue(mockResponse(200, { ok: true }))
+    const response = await apiFetch<Response>('/api/tasks', { raw: true })
+
+    expect(response).toBeInstanceOf(Response)
+    expect(response.status).toBe(200)
+  })
+
+  it('preserves non-specialized client errors for raw response inspection', async () => {
+    const payload = { error: 'Task needs a title', field: 'title' }
+    global.fetch = vi.fn().mockResolvedValue(mockResponse(422, payload))
+
+    const response = await apiFetch<Response>('/api/tasks', {
+      method: 'POST',
+      raw: true,
+    })
+
+    expect(response.ok).toBe(false)
+    expect(response.status).toBe(422)
+    await expect(response.json()).resolves.toEqual(payload)
   })
 })

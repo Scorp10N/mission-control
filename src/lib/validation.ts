@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { ZodSchema, ZodError } from 'zod'
 import { z } from 'zod'
+import { WORKSPACE_ISOLATION_VALUES } from './workspaces'
 
 export async function validateBody<T>(
   request: Request,
@@ -118,6 +119,62 @@ export const createAgentSchema = z.object({
   runtime_type: z.enum(['hermes', 'openclaw', 'claude', 'codex', 'custom']).optional(),
 })
 
+// Workspace fields (issue #677 slice 1). The `isolation` CHECK cannot live in
+// SQLite (ALTER TABLE cannot add constraints), so this enum is the enforcement
+// point for allowed values. `brand` is a free-text grouping tag; null clears it.
+const workspaceFields = {
+  name: z.string().min(1, 'Name is required').max(200),
+  slug: z.string().min(1).max(200),
+  brand: z.string().trim().min(1, 'Brand cannot be empty').max(64).nullable(),
+  isolation: z.enum(WORKSPACE_ISOLATION_VALUES),
+}
+
+export const createWorkspaceSchema = z.object({
+  name: workspaceFields.name,
+  slug: workspaceFields.slug.optional(),
+  brand: workspaceFields.brand.optional(),
+  isolation: workspaceFields.isolation.optional(),
+})
+
+// `brand`/`isolation` omitted ⇒ stored values are preserved (no defaults here,
+// same rationale as updateTaskSchema above).
+export const updateWorkspaceSchema = z.object({
+  name: workspaceFields.name,
+  brand: workspaceFields.brand.optional(),
+  isolation: workspaceFields.isolation.optional(),
+})
+
+const projectAssignmentNamesSchema = z.array(
+  z.string().trim().min(1, 'Agent name cannot be empty').max(100)
+).max(100, 'A project can have at most 100 assigned agents').superRefine((names, ctx) => {
+  if (new Set(names).size !== names.length) {
+    ctx.addIssue({ code: 'custom', message: 'Agent assignments must be unique' })
+  }
+})
+
+const booleanFlagSchema = z.union([z.boolean(), z.literal(0), z.literal(1)])
+
+export const updateProjectSchema = z.object({
+  name: z.string().trim().min(1, 'Project name cannot be empty').max(200).optional(),
+  description: z.string().max(5000).nullable().optional(),
+  ticket_prefix: z.string().max(64).optional(),
+  ticketPrefix: z.string().max(64).optional(),
+  status: z.enum(['active', 'archived']).optional(),
+  github_repo: z.string().trim().max(200).nullable().optional(),
+  deadline: z.number().int().min(0).max(4102444800).nullable().optional(),
+  color: z.string().trim().max(32).nullable().optional(),
+  github_sync_enabled: booleanFlagSchema.optional(),
+  github_default_branch: z.string().trim().min(1).max(255).optional(),
+  github_labels_initialized: booleanFlagSchema.optional(),
+  assigned_agents: projectAssignmentNamesSchema.optional(),
+}).strict().superRefine((body, ctx) => {
+  if (body.ticket_prefix !== undefined && body.ticketPrefix !== undefined) {
+    ctx.addIssue({ code: 'custom', message: 'Use only one ticket prefix field' })
+  }
+}).refine((body) => Object.keys(body).length > 0, {
+  message: 'At least one field is required',
+})
+
 export const bulkUpdateTaskStatusSchema = z.object({
   tasks: z.array(z.object({
     id: z.number().int().positive(),
@@ -218,6 +275,62 @@ export const createUserSchema = z.object({
   provider: z.enum(['local', 'google']).default('local'),
   email: z.string().optional(),
 })
+
+export const createOsUserSchema = z.object({
+  username: z.string().trim().toLowerCase()
+    .regex(/^[a-z][a-z0-9_-]{1,30}[a-z0-9]$/, 'Invalid OS username'),
+  display_name: z.string().trim().min(1, 'Display name is required').max(100),
+  password: z.string().min(12, 'Password must be at least 12 characters').max(128).optional(),
+  gateway_mode: z.boolean().optional(),
+  gateway_port: z.number().int().min(1024).max(65535).optional(),
+  owner_gateway: z.string().trim().min(1).max(120).optional(),
+  dry_run: z.boolean().optional(),
+  install_openclaw: z.boolean().optional(),
+  install_claude: z.boolean().optional(),
+  install_codex: z.boolean().optional(),
+}).strict().superRefine((body, ctx) => {
+  if (body.gateway_mode && body.gateway_port === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['gateway_port'],
+      message: 'gateway_port is required in gateway mode',
+    })
+  }
+})
+
+export const installTmuxSchema = z.object({
+  confirmation: z.literal('install_tmux'),
+}).strict()
+
+export const releaseUpdateSchema = z.object({
+  targetVersion: z.string().trim().min(1).max(128),
+  confirmation: z.literal('update_mission_control'),
+}).strict()
+
+export const openClawUpdateSchema = z.object({
+  confirmation: z.literal('update_openclaw'),
+}).strict()
+
+export const openClawDoctorFixSchema = z.object({
+  confirmation: z.literal('fix_openclaw'),
+}).strict()
+
+const skillIdentifierSchema = z.string().trim().min(1).max(128).regex(
+  /^[a-zA-Z0-9._-]+$/,
+  'Only letters, numbers, dots, underscores, and hyphens are allowed',
+)
+
+export const skillMutationSchema = z.object({
+  source: skillIdentifierSchema,
+  name: skillIdentifierSchema,
+  content: z.string().max(256 * 1024, 'Skill content must not exceed 256 KiB'),
+}).strict()
+
+export const skillDeleteSchema = z.object({
+  source: skillIdentifierSchema,
+  name: skillIdentifierSchema,
+  confirmation: z.literal('delete_skill'),
+}).strict()
 
 export const accessRequestActionSchema = z.object({
   request_id: z.number(),

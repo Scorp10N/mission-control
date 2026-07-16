@@ -109,7 +109,7 @@ const obsidianTheme: Theme = {
 export function MemoryGraph() {
   const t = useTranslations('memoryGraph')
   const { memoryGraphAgents, setMemoryGraphAgents } = useMissionControl()
-  const agents = memoryGraphAgents || []
+  const agents = useMemo(() => memoryGraphAgents || [], [memoryGraphAgents])
   const [selectedAgent, setSelectedAgent] = useState<string>('all')
   const [isLoading, setIsLoading] = useState(memoryGraphAgents === null)
   const [error, setError] = useState<string | null>(null)
@@ -423,7 +423,7 @@ export function MemoryGraph() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('filterFiles')}
-            className="px-2.5 py-1 text-[11px] font-mono rounded-md bg-[#1e1e2e]/80 backdrop-blur-xl border border-[#45475a]/50 text-[#cdd6f4] placeholder-[#45475a] focus:outline-none focus:border-[#cba6f7]/40 w-36 transition-colors"
+            className="px-2.5 py-1 text-[11px] font-mono rounded-md bg-[#1e1e2e]/80 backdrop-blur-xl border border-[#45475a]/50 text-[#cdd6f4] placeholder-[#45475a] focus:outline-hidden focus:border-[#cba6f7]/40 w-36 transition-colors"
           />
         )}
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#1e1e2e]/80 backdrop-blur-xl border border-[#45475a]/30">

@@ -427,7 +427,7 @@ export async function PUT(
     }
 
     // Broadcast to SSE clients
-    eventBus.broadcast('task.updated', parsedTask);
+    eventBus.broadcast('task.updated', { ...parsedTask, workspace_id: workspaceId });
 
     return NextResponse.json({ task: parsedTask });
   } catch (error) {
@@ -499,7 +499,7 @@ export async function DELETE(
     }
 
     // Broadcast to SSE clients
-    eventBus.broadcast('task.deleted', { id: taskId, title: task.title });
+    eventBus.broadcast('task.deleted', { id: taskId, title: task.title, workspace_id: workspaceId });
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -50,3 +50,6 @@ docs/_*.png
 
 # Local worktrees
 .worktrees/
+
+# IDE state
+.vs/

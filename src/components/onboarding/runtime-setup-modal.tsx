@@ -20,7 +20,7 @@ export function RuntimeSetupModal({ runtime, onClose, onComplete }: RuntimeSetup
   }[runtime]
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="bg-card border border-border rounded-xl max-w-lg w-full max-h-[80vh] overflow-y-auto shadow-2xl shadow-black/30">
         <SetupComponent onClose={onClose} onComplete={onComplete} />
       </div>
@@ -107,12 +107,15 @@ function OpenClawSetup({ onClose, onComplete }: { onClose: () => void; onComplet
     setRunning(true)
     setError(null)
     try {
-      const data = await apiFetch<{ success?: boolean; output?: string }>('/api/openclaw/doctor', { method: 'POST' })
+      const data = await apiFetch<{ success?: boolean }>('/api/openclaw/doctor', {
+        method: 'POST',
+        body: JSON.stringify({ confirmation: 'fix_openclaw' }),
+      })
       if (data.success) {
         setStep('done')
         setOutput('All issues resolved')
       } else {
-        setOutput(data.output || 'Fix attempt completed with warnings')
+        setOutput('Fix attempt completed with warnings')
       }
     } catch (err) {
       // Preserve graceful degradation: a non-ok response previously did
@@ -509,7 +512,7 @@ function HermesSetup({ onClose, onComplete }: { onClose: () => void; onComplete:
               value={customModel}
               onChange={(e) => { setCustomModel(e.target.value); if (e.target.value) setSelectedModel(e.target.value) }}
               placeholder="Custom model..."
-              className="w-full h-6 rounded border border-border/20 bg-black/10 px-2 text-[10px] text-foreground font-mono placeholder:text-muted-foreground/20 focus:outline-none focus:ring-1 focus:ring-primary/30"
+              className="w-full h-6 rounded border border-border/20 bg-black/10 px-2 text-[10px] text-foreground font-mono placeholder:text-muted-foreground/20 focus:outline-hidden focus:ring-1 focus:ring-primary/30"
             />
           </div>
 
@@ -676,7 +679,7 @@ function HermesSetup({ onClose, onComplete }: { onClose: () => void; onComplete:
                 value={providerKey}
                 onChange={(e) => setProviderKey(e.target.value)}
                 placeholder={`sk-...`}
-                className="w-full h-9 rounded border border-border/30 bg-surface-1 px-2.5 text-xs text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-primary/30 font-mono"
+                className="w-full h-9 rounded border border-border/30 bg-surface-1 px-2.5 text-xs text-foreground placeholder:text-muted-foreground/30 focus:outline-hidden focus:ring-1 focus:ring-primary/30 font-mono"
               />
               <p className="text-[10px] text-muted-foreground/30 mt-0.5">
                 Saved to ~/.hermes/.env
@@ -759,7 +762,7 @@ function HermesSetup({ onClose, onComplete }: { onClose: () => void; onComplete:
             onChange={(e) => setSoulContent(e.target.value)}
             placeholder="Example: You are a concise technical expert who communicates clearly and directly. You focus on actionable solutions."
             rows={4}
-            className="w-full rounded border border-border/40 bg-surface-1 px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-primary/30 resize-none"
+            className="w-full rounded border border-border/40 bg-surface-1 px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/30 focus:outline-hidden focus:ring-1 focus:ring-primary/30 resize-none"
           />
 
           <p className="text-[10px] text-muted-foreground/40">

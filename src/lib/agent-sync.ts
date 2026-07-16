@@ -13,6 +13,7 @@ import { existsSync, readFileSync, statSync } from 'fs'
 import { resolveWithin } from './paths'
 import { logger } from './logger'
 import { parseJsonRelaxed } from './json-relaxed'
+import { resolveSharedRuntimeWorkspaceId } from './workspace-isolation'
 
 interface OpenClawAgent {
   id: string
@@ -226,7 +227,18 @@ function mapAgentToMC(agent: OpenClawAgent): {
 }
 
 /** Sync agents from openclaw.json into the MC database */
-export async function syncAgentsFromConfig(actor: string = 'system'): Promise<SyncResult> {
+export async function syncAgentsFromConfig(actor: string = 'system', requestedWorkspaceId?: number): Promise<SyncResult> {
+  const workspaceId = resolveSharedRuntimeWorkspaceId(requestedWorkspaceId)
+  if (workspaceId === null) {
+    return {
+      synced: 0,
+      created: 0,
+      updated: 0,
+      agents: [],
+      error: 'Global agent sync requires one unambiguous shared workspace',
+    }
+  }
+
   let agents: OpenClawAgent[]
   try {
     agents = await readOpenClawAgents()
@@ -244,20 +256,20 @@ export async function syncAgentsFromConfig(actor: string = 'system'): Promise<Sy
   let updated = 0
   const results: SyncResult['agents'] = []
 
-  const findByName = db.prepare('SELECT id, name, role, config, soul_content FROM agents WHERE name = ?')
+  const findByName = db.prepare('SELECT id, name, role, config, soul_content FROM agents WHERE name = ? AND workspace_id = ?')
   const insertAgent = db.prepare(`
-    INSERT INTO agents (name, role, soul_content, status, created_at, updated_at, config)
-    VALUES (?, ?, ?, 'offline', ?, ?, ?)
+    INSERT INTO agents (name, role, soul_content, status, created_at, updated_at, config, workspace_id)
+    VALUES (?, ?, ?, 'offline', ?, ?, ?, ?)
   `)
   const updateAgent = db.prepare(`
-    UPDATE agents SET role = ?, config = ?, soul_content = ?, updated_at = ? WHERE name = ?
+    UPDATE agents SET role = ?, config = ?, soul_content = ?, updated_at = ? WHERE name = ? AND workspace_id = ?
   `)
 
   db.transaction(() => {
     for (const agent of agents) {
       const mapped = mapAgentToMC(agent)
       const configJson = JSON.stringify(mapped.config)
-      const existing = findByName.get(mapped.name) as any
+      const existing = findByName.get(mapped.name, workspaceId) as any
 
       if (existing) {
         // Check if config or soul_content actually changed
@@ -269,14 +281,14 @@ export async function syncAgentsFromConfig(actor: string = 'system'): Promise<Sy
         if (configChanged || soulChanged) {
           // Only overwrite soul_content if we read a new value from workspace
           const soulToWrite = mapped.soul_content ?? existingSoul
-          updateAgent.run(mapped.role, configJson, soulToWrite, now, mapped.name)
+          updateAgent.run(mapped.role, configJson, soulToWrite, now, mapped.name, workspaceId)
           results.push({ id: agent.id, name: mapped.name, action: 'updated' })
           updated++
         } else {
           results.push({ id: agent.id, name: mapped.name, action: 'unchanged' })
         }
       } else {
-        insertAgent.run(mapped.name, mapped.role, mapped.soul_content, now, now, configJson)
+        insertAgent.run(mapped.name, mapped.role, mapped.soul_content, now, now, configJson, workspaceId)
         results.push({ id: agent.id, name: mapped.name, action: 'created' })
         created++
       }
@@ -291,10 +303,11 @@ export async function syncAgentsFromConfig(actor: string = 'system'): Promise<Sy
       action: 'agent_config_sync',
       actor,
       detail: { synced, created, updated, agents: results.filter(a => a.action !== 'unchanged').map(a => a.name) },
+      workspace_id: workspaceId,
     })
 
     // Broadcast sync event
-    eventBus.broadcast('agent.created', { type: 'sync', synced, created, updated })
+    eventBus.broadcast('agent.created', { type: 'sync', synced, created, updated, workspace_id: workspaceId })
   }
 
   logger.info({ synced, created, updated }, 'Agent sync complete')
@@ -302,7 +315,12 @@ export async function syncAgentsFromConfig(actor: string = 'system'): Promise<Sy
 }
 
 /** Preview the diff between openclaw.json and MC database without writing */
-export async function previewSyncDiff(): Promise<SyncDiff> {
+export async function previewSyncDiff(requestedWorkspaceId?: number): Promise<SyncDiff> {
+  const workspaceId = resolveSharedRuntimeWorkspaceId(requestedWorkspaceId)
+  if (workspaceId === null) {
+    return { inConfig: 0, inMC: 0, newAgents: [], updatedAgents: [], onlyInMC: [] }
+  }
+
   let agents: OpenClawAgent[]
   try {
     agents = await readOpenClawAgents()
@@ -311,7 +329,7 @@ export async function previewSyncDiff(): Promise<SyncDiff> {
   }
 
   const db = getDatabase()
-  const allMCAgents = db.prepare('SELECT name, role, config FROM agents').all() as Array<{ name: string; role: string; config: string }>
+  const allMCAgents = db.prepare('SELECT name, role, config FROM agents WHERE workspace_id = ?').all(workspaceId) as Array<{ name: string; role: string; config: string }>
   const mcNames = new Set(allMCAgents.map(a => a.name))
 
   const newAgents: string[] = []
@@ -457,9 +475,12 @@ function normalizeModelConfig(model: unknown): unknown {
 
 function normalizeAgentConfigForOpenClaw(agentConfig: any): any {
   if (!agentConfig || typeof agentConfig !== 'object') return agentConfig
-  if (!('model' in agentConfig)) return agentConfig
+  const normalized = { ...agentConfig }
+  delete normalized.fallbacks
+
+  if (!('model' in normalized)) return normalized
   return {
-    ...agentConfig,
-    model: normalizeModelConfig(agentConfig.model),
+    ...normalized,
+    model: normalizeModelConfig(normalized.model),
   }
 }

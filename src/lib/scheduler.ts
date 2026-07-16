@@ -12,6 +12,7 @@ import { syncSkillsFromDisk } from './skill-sync'
 import { syncLocalAgents } from './local-agent-sync'
 import { dispatchAssignedTasks, runAegisReviews, requeueStaleTasks, autoRouteInboxTasks, reconcileDeferredTaskCompletions } from './task-dispatch'
 import { spawnRecurringTasks } from './recurring-tasks'
+import { resolveSharedRuntimeWorkspaceId } from './workspace-isolation'
 
 const BACKUP_DIR = join(dirname(config.dbPath), 'backups')
 
@@ -181,37 +182,38 @@ async function runHeartbeatCheck(): Promise<{ ok: boolean; message: string }> {
 
     // Find agents that are not offline but haven't been seen recently
     const staleAgents = db.prepare(`
-      SELECT id, name, status, last_seen FROM agents
+      SELECT id, name, status, last_seen, workspace_id FROM agents
       WHERE status != 'offline' AND (last_seen IS NULL OR last_seen < ?)
-    `).all(threshold) as Array<{ id: number; name: string; status: string; last_seen: number | null }>
+    `).all(threshold) as Array<{ id: number; name: string; status: string; last_seen: number | null; workspace_id: number }>
 
     if (staleAgents.length === 0) {
       return { ok: true, message: 'All agents healthy' }
     }
 
     // Mark stale agents as offline
-    const markOffline = db.prepare('UPDATE agents SET status = ?, updated_at = ? WHERE id = ?')
+    const markOffline = db.prepare('UPDATE agents SET status = ?, updated_at = ? WHERE id = ? AND workspace_id = ?')
     const logActivity = db.prepare(`
-      INSERT INTO activities (type, entity_type, entity_id, actor, description)
-      VALUES ('agent_status_change', 'agent', ?, 'heartbeat', ?)
+      INSERT INTO activities (type, entity_type, entity_id, actor, description, workspace_id)
+      VALUES ('agent_status_change', 'agent', ?, 'heartbeat', ?, ?)
     `)
 
     const names: string[] = []
     db.transaction(() => {
       for (const agent of staleAgents) {
-        markOffline.run('offline', now, agent.id)
-        logActivity.run(agent.id, `Agent "${agent.name}" marked offline (no heartbeat for ${timeoutMinutes}m)`)
+        markOffline.run('offline', now, agent.id, agent.workspace_id)
+        logActivity.run(agent.id, `Agent "${agent.name}" marked offline (no heartbeat for ${timeoutMinutes}m)`, agent.workspace_id)
         names.push(agent.name)
 
         // Create notification for each stale agent
         try {
           db.prepare(`
-            INSERT INTO notifications (recipient, type, title, message, source_type, source_id)
-            VALUES ('system', 'heartbeat', ?, ?, 'agent', ?)
+            INSERT INTO notifications (recipient, type, title, message, source_type, source_id, workspace_id)
+            VALUES ('system', 'heartbeat', ?, ?, 'agent', ?, ?)
           `).run(
             `Agent offline: ${agent.name}`,
             `Agent "${agent.name}" was marked offline after ${timeoutMinutes} minutes without heartbeat`,
-            agent.id
+            agent.id,
+            agent.workspace_id,
           )
         } catch { /* notification creation failed */ }
       }
@@ -220,7 +222,7 @@ async function runHeartbeatCheck(): Promise<{ ok: boolean; message: string }> {
     logAuditEvent({
       action: 'heartbeat_check',
       actor: 'scheduler',
-      detail: { marked_offline: names },
+      detail: { marked_offline_count: names.length },
     })
 
     return { ok: true, message: `Marked ${staleAgents.length} agent(s) offline: ${names.join(', ')}` }
@@ -230,16 +232,19 @@ async function runHeartbeatCheck(): Promise<{ ok: boolean; message: string }> {
 }
 
 /** Sync live agent statuses from gateway session files into the DB */
-async function syncAgentLiveStatuses(): Promise<number> {
+async function syncAgentLiveStatuses(requestedWorkspaceId?: number): Promise<number> {
+  const workspaceId = resolveSharedRuntimeWorkspaceId(requestedWorkspaceId)
+  if (workspaceId === null) return 0
+
   const liveStatuses = getAgentLiveStatuses()
   if (liveStatuses.size === 0) return 0
 
   const db = getDatabase()
-  const agents = db.prepare('SELECT id, name, config FROM agents').all() as Array<{
+  const agents = db.prepare('SELECT id, name, config FROM agents WHERE workspace_id = ?').all(workspaceId) as Array<{
     id: number; name: string; config: string | null
   }>
 
-  const update = db.prepare('UPDATE agents SET status = ?, last_seen = ?, last_activity = ?, updated_at = ? WHERE id = ?')
+  const update = db.prepare('UPDATE agents SET status = ?, last_seen = ?, last_activity = ?, updated_at = ? WHERE id = ? AND workspace_id = ?')
   let refreshed = 0
 
   const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9._-]+/g, '-')
@@ -271,10 +276,11 @@ async function syncAgentLiveStatuses(): Promise<number> {
 
       const now = Math.floor(Date.now() / 1000)
       const activity = `Gateway session (${matched.channel || 'unknown'})`
-      update.run(matched.status, now, activity, now, agent.id)
+      update.run(matched.status, now, activity, now, agent.id, workspaceId)
       refreshed++
 
       eventBus.broadcast('agent.status_changed', {
+        workspace_id: workspaceId,
         id: agent.id,
         name: agent.name,
         status: matched.status,
@@ -296,9 +302,13 @@ export function initScheduler() {
   if (tickInterval) return // Already running
 
   // Auto-sync agents from openclaw.json on startup
-  syncAgentsFromConfig('startup').catch(err => {
-    logger.warn({ err }, 'Agent auto-sync failed')
-  })
+  syncAgentsFromConfig('startup')
+    .then(result => {
+      if (result.error) logger.warn({ reason: result.error }, 'Agent auto-sync skipped')
+    })
+    .catch(err => {
+      logger.warn({ err }, 'Agent auto-sync failed')
+    })
 
   // Register tasks
   const now = Date.now()
@@ -462,6 +472,7 @@ async function tick() {
         : id === 'skill_sync' ? await syncSkillsFromDisk()
         : id === 'local_agent_sync' ? await syncLocalAgents()
         : id === 'gateway_agent_sync' ? await syncAgentsFromConfig('scheduled').then(async r => {
+            if (r.error) return { ok: false, message: r.error }
             const refreshed = await syncAgentLiveStatuses()
             return { ok: true, message: `Gateway sync: ${r.created} created, ${r.updated} updated, ${r.synced} total | Live status: ${refreshed} refreshed` }
           })
@@ -527,15 +538,15 @@ export function getSchedulerStatus() {
 }
 
 /** Manually trigger a scheduled task */
-export async function triggerTask(taskId: string): Promise<{ ok: boolean; message: string }> {
+export async function triggerTask(taskId: string, workspaceId?: number): Promise<{ ok: boolean; message: string }> {
   if (taskId === 'auto_backup') return runBackup()
   if (taskId === 'auto_cleanup') return runCleanup()
   if (taskId === 'agent_heartbeat') return runHeartbeatCheck()
   if (taskId === 'webhook_retry') return processWebhookRetries()
   if (taskId === 'claude_session_scan') return syncClaudeSessions()
   if (taskId === 'skill_sync') return syncSkillsFromDisk()
-  if (taskId === 'local_agent_sync') return syncLocalAgents()
-  if (taskId === 'gateway_agent_sync') return syncAgentsFromConfig('manual').then(r => ({ ok: true, message: `Gateway sync: ${r.created} created, ${r.updated} updated, ${r.synced} total` }))
+  if (taskId === 'local_agent_sync') return syncLocalAgents(workspaceId)
+  if (taskId === 'gateway_agent_sync') return syncAgentsFromConfig('manual', workspaceId).then(r => ({ ok: !r.error, message: r.error || `Gateway sync: ${r.created} created, ${r.updated} updated, ${r.synced} total` }))
   if (taskId === 'task_dispatch') return autoRouteInboxTasks().then(async (r) => { const c = await reconcileDeferredTaskCompletions(); const d = await dispatchAssignedTasks(); return { ok: r.ok && c.ok && d.ok, message: [c.message, r.message, d.message].filter(m => m && !m.includes('No ') && !m.includes('none completed')).join(' | ') || 'No tasks' } })
   if (taskId === 'aegis_review') return runAegisReviews()
   if (taskId === 'recurring_task_spawn') return spawnRecurringTasks()

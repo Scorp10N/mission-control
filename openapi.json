@@ -5443,12 +5443,28 @@
       },
       "post": {
         "tags": ["API"],
-        "summary": "Install tmux (opt-in, admin only)",
+        "summary": "Install tmux (explicitly confirmed, admin only)",
         "operationId": "post_api_pty_setup",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["confirmation"],
+                "properties": {
+                  "confirmation": { "type": "string", "enum": ["install_tmux"] }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": { "description": "OK" },
           "400": { "description": "Bad request" },
           "401": { "description": "Unauthorized" },
+          "429": { "description": "Too many installation attempts" },
           "500": { "description": "Internal server error" }
         }
       }
@@ -6508,17 +6524,40 @@
         "tags": [
           "Skills"
         ],
-        "summary": "Delete /api/skills",
+        "summary": "Delete a local skill",
         "operationId": "deleteApiSkills",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["source", "name", "confirmation"],
+                "properties": {
+                  "source": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9._-]+$" },
+                  "name": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9._-]+$" },
+                  "confirmation": { "type": "string", "enum": ["delete_skill"] }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       },
@@ -6544,17 +6583,43 @@
         "tags": [
           "Skills"
         ],
-        "summary": "Post /api/skills",
+        "summary": "Create or replace a local skill",
         "operationId": "postApiSkills",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["source", "name", "content"],
+                "properties": {
+                  "source": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9._-]+$" },
+                  "name": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9._-]+$" },
+                  "content": { "type": "string", "maxLength": 262144 }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "description": "Skill content failed security checks"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       },
@@ -6562,17 +6627,43 @@
         "tags": [
           "Skills"
         ],
-        "summary": "Put /api/skills",
+        "summary": "Update a local skill",
         "operationId": "putApiSkills",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["source", "name", "content"],
+                "properties": {
+                  "source": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9._-]+$" },
+                  "name": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9._-]+$" },
+                  "content": { "type": "string", "maxLength": 262144 }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "description": "Skill content failed security checks"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -9925,16 +10016,24 @@
           "404": {
             "description": "Not found"
           },
+          "429": {
+            "description": "Too many maintenance attempts"
+          },
           "500": {
             "description": "Internal server error"
           }
         },
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object"
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["confirmation"],
+                "properties": {
+                  "confirmation": { "type": "string", "enum": ["fix_openclaw"] }
+                }
               }
             }
           }
@@ -9993,16 +10092,24 @@
           "404": {
             "description": "Not found"
           },
+          "429": {
+            "description": "Too many maintenance attempts"
+          },
           "500": {
             "description": "Internal server error"
           }
         },
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object"
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["confirmation"],
+                "properties": {
+                  "confirmation": { "type": "string", "enum": ["update_openclaw"] }
+                }
               }
             }
           }
@@ -11566,11 +11673,15 @@
               "schema": {
                 "type": "object",
                 "required": ["username", "display_name"],
+                "additionalProperties": false,
                 "properties": {
-                  "username": { "type": "string" },
-                  "display_name": { "type": "string" },
-                  "password": { "type": "string" },
+                  "username": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{1,30}[a-z0-9]$" },
+                  "display_name": { "type": "string", "minLength": 1, "maxLength": 100 },
+                  "password": { "type": "string", "minLength": 12, "maxLength": 128 },
                   "gateway_mode": { "type": "boolean" },
+                  "gateway_port": { "type": "integer", "minimum": 1024, "maximum": 65535 },
+                  "owner_gateway": { "type": "string", "minLength": 1, "maxLength": 120 },
+                  "dry_run": { "type": "boolean" },
                   "install_openclaw": { "type": "boolean" },
                   "install_claude": { "type": "boolean" },
                   "install_codex": { "type": "boolean" }
@@ -11587,7 +11698,8 @@
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
-          "409": { "description": "User already exists" }
+          "409": { "description": "User already exists" },
+          "429": { "description": "Provisioning rate limit exceeded" }
         }
       }
     },
@@ -11655,9 +11767,11 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["targetVersion"],
+                "additionalProperties": false,
+                "required": ["targetVersion", "confirmation"],
                 "properties": {
-                  "targetVersion": { "type": "string" }
+                  "targetVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+                  "confirmation": { "type": "string", "enum": ["update_mission_control"] }
                 }
               }
             }
@@ -11684,7 +11798,10 @@
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
-          "409": { "description": "Working tree has uncommitted changes" }
+          "404": { "description": "Release tag not found" },
+          "409": { "description": "Working tree is dirty or release provenance is invalid" },
+          "429": { "description": "Too many update attempts" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
         }
       }
     }

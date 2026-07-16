@@ -4,6 +4,7 @@ import { existsSync, statSync } from 'node:fs'
 import { requireRole } from '@/lib/auth'
 import { config } from '@/lib/config'
 import { getDatabase } from '@/lib/db'
+import { denyUnscopedResourceForStrictWorkspace } from '@/lib/workspace-isolation'
 import { runOpenClaw } from '@/lib/command'
 import { logger } from '@/lib/logger'
 import { APP_VERSION } from '@/lib/version'
@@ -19,13 +20,15 @@ const INSECURE_PASSWORDS = new Set([
 export async function GET(request: NextRequest) {
   const auth = requireRole(request, 'admin')
   if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
+  const isolationDeny = denyUnscopedResourceForStrictWorkspace(auth.user, 'host_administration', new URL(request.url).pathname)
+  if (isolationDeny) return isolationDeny
 
   try {
     const [version, security, database, agents, sessions, gateway] = await Promise.all([
       getVersionInfo(),
       getSecurityInfo(),
       getDatabaseInfo(),
-      getAgentInfo(),
+      getAgentInfo(auth.user.workspace_id ?? 1),
       getSessionInfo(),
       getGatewayInfo(),
     ])
@@ -158,12 +161,12 @@ function getDatabaseInfo() {
   }
 }
 
-function getAgentInfo() {
+function getAgentInfo(workspaceId: number) {
   try {
     const db = getDatabase()
     const rows = db.prepare(
-      'SELECT status, COUNT(*) as count FROM agents GROUP BY status'
-    ).all() as Array<{ status: string; count: number }>
+      'SELECT status, COUNT(*) as count FROM agents WHERE workspace_id = ? GROUP BY status'
+    ).all(workspaceId) as Array<{ status: string; count: number }>
 
     const byStatus: Record<string, number> = {}
     let total = 0

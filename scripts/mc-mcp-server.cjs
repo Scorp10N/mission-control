@@ -746,7 +746,7 @@ const TOOLS = [
       required: ['source', 'name'],
     },
     handler: async ({ source, name }) =>
-      api('DELETE', `/api/skills?source=${encodeURIComponent(source)}&name=${encodeURIComponent(name)}`),
+      api('DELETE', '/api/skills', { source, name, confirmation: 'delete_skill' }),
   },
 
   // --- Cron ---

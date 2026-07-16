@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth'
 import { detectAllRuntimes, detectRuntime, startInstall, getInstallJob, getActiveJobs, generateDockerSidecar } from '@/lib/agent-runtimes'
 import type { RuntimeId, DeploymentMode } from '@/lib/agent-runtimes'
+import { runtimeInstallsEnabled } from '@/lib/runtime-install-security'
 import { clearHermesDetectionCache } from '@/lib/hermes-sessions'
 import { logAuditEvent } from '@/lib/db'
 import { logger } from '@/lib/logger'
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
   const activeJobs = getActiveJobs()
   const isDocker = existsSync('/.dockerenv')
 
-  return NextResponse.json({ runtimes, activeJobs, isDocker })
+  return NextResponse.json({ runtimes, activeJobs, isDocker, runtimeInstallsEnabled: runtimeInstallsEnabled() })
 }
 
 export async function POST(request: NextRequest) {
@@ -45,12 +46,18 @@ export async function POST(request: NextRequest) {
     if (!VALID_MODES.has(mode)) {
       return NextResponse.json({ error: 'Invalid mode. Use: local, docker' }, { status: 400 })
     }
+    if (mode === 'local' && !runtimeInstallsEnabled()) {
+      return NextResponse.json({
+        error: 'Local runtime installs are disabled. Set MC_ENABLE_RUNTIME_INSTALLS=1 after reviewing the supply-chain requirements.',
+      }, { status: 403 })
+    }
 
     logger.info({ runtime, mode, actor: auth.user.username }, 'Starting agent runtime install')
     logAuditEvent({
       action: 'agent_runtime.install',
       actor: auth.user.username,
       detail: JSON.stringify({ runtime, mode }),
+      workspace_id: auth.user.workspace_id ?? 1,
     })
 
     const job = startInstall(runtime, mode)

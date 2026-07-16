@@ -369,7 +369,7 @@ export function AgentSquadPanelPhase3() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex justify-between items-center p-4 border-b border-border flex-shrink-0">
+      <div className="flex justify-between items-center p-4 border-b border-border shrink-0">
         <div className="flex items-center gap-4">
           <h2 className="text-xl font-bold text-foreground">{t('title')}</h2>
           
@@ -488,7 +488,7 @@ export function AgentSquadPanelPhase3() {
                   className="group relative overflow-hidden rounded-xl border border-border/70 bg-card p-4 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-border hover:shadow-lg cursor-pointer"
                   onClick={() => setSelectedAgent(agent)}
                 >
-                  <div className={`pointer-events-none absolute inset-y-0 left-0 w-1 bg-gradient-to-b ${(statusCardStyles[agent.status] || defaultCardStyle).edge}`} />
+                  <div className={`pointer-events-none absolute inset-y-0 left-0 w-1 bg-linear-to-b ${(statusCardStyles[agent.status] || defaultCardStyle).edge}`} />
                   {agent.hidden ? <div className="absolute top-2 right-2 text-2xs text-slate-500">hidden</div> : null}
 
                   {/* Header: avatar + name + status */}
@@ -1167,12 +1167,14 @@ function QuickSpawnModal({
   const [isSpawning, setIsSpawning] = useState(false)
   const [spawnResult, setSpawnResult] = useState<any>(null)
 
+  // Cost labels are input/output USD per MILLION tokens ("/1K" was a
+  // mislabel — these were always per-MTok prices). Values match MODEL_CATALOG.
   const models = [
-    { id: 'haiku', name: 'Claude Haiku', cost: '$0.25/1K', speed: 'Ultra Fast' },
-    { id: 'sonnet', name: 'Claude Sonnet', cost: '$3.00/1K', speed: 'Fast' },
-    { id: 'opus', name: 'Claude Opus', cost: '$15.00/1K', speed: 'Slow' },
-    { id: 'groq-fast', name: 'Groq Llama 8B', cost: '$0.05/1K', speed: '840 tok/s' },
-    { id: 'groq', name: 'Groq Llama 70B', cost: '$0.59/1K', speed: '150 tok/s' },
+    { id: 'haiku', name: 'Claude Haiku', cost: '$1/$5 per MTok', speed: 'Ultra Fast' },
+    { id: 'sonnet', name: 'Claude Sonnet', cost: '$3/$15 per MTok', speed: 'Fast' },
+    { id: 'opus', name: 'Claude Opus', cost: '$5/$25 per MTok', speed: 'Slow' },
+    { id: 'groq-fast', name: 'Groq Llama 8B', cost: '$0.05/$0.08 per MTok', speed: '840 tok/s' },
+    { id: 'groq', name: 'Groq Llama 70B', cost: '$0.59/$0.79 per MTok', speed: '150 tok/s' },
     { id: 'deepseek', name: 'DeepSeek R1', cost: 'FREE', speed: 'Local' },
   ]
 
@@ -1235,7 +1237,7 @@ function QuickSpawnModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
       <div className="bg-card border border-border rounded-lg max-w-md w-full p-6">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-bold text-foreground">

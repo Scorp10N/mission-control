@@ -1,9 +1,17 @@
-allowBuilds:
-  '@parcel/watcher': set this to true or false
-  '@swc/core': set this to true or false
-  better-sqlite3: set this to true or false
-  esbuild: set this to true or false
-  node-pty: set this to true or false
-  sharp: set this to true or false
-  unrs-resolver: set this to true or false
-  vue-demi: set this to true or false
+onlyBuiltDependencies:
+  - '@parcel/watcher'
+  - '@swc/core'
+  - better-sqlite3
+  - esbuild
+  - node-pty
+  - sharp
+  - unrs-resolver
+  - vue-demi
+
+minimumReleaseAge: 10080
+minimumReleaseAgeExclude: []
+
+overrides:
+  postcss@8: '>=8.5.10'
+  ts-deepmerge: '>=8.0.0'
+  eslint-plugin-react-hooks: ~7.0.1

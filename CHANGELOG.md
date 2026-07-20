@@ -9,12 +9,25 @@ All notable changes to Mission Control are documented in this file.
 ### Added
 - Opt-in sandbox flags for host CLI dispatch (#766, closes #720) — `allowedTools` (validated against an allowlist), `--max-budget-usd` (clamped), and a workspace-scoped `cwd` (escape-protected via `MC_WORKSPACE_ROOT`). Sourced from `agents.config` with per-task `tasks.metadata` override; absent config leaves dispatch byte-identical to before.
 - Native `brand` and `isolation` fields on workspaces (#767, refs #677) — migration `052`, isolation enum `shared | strict` enforced in validation, editable from the super-admin panel. (The workspace approval-rules engine from #677 remains deferred.)
+- Policy router — privacy/budget/approval routing guard wired into task dispatch and the task queue endpoint, with contract tests.
+- Task dependencies — `task_dependencies` table, cycle detection, and blocked-dispatch enforcement.
+- Agent weekly usage limits — `agent_limits` table, weekly token/USD enforcement, `/api/limits` endpoints.
+- Per-agent API keys with audit log and rate limiting (TASK-065).
+- MCP HTTP transport alongside the existing stdio transport, plus per-project `.mcp.json` for Claude Code agent setup.
+- 17 new MCP tools closing coverage gaps vs the CLI/REST API — agent lifecycle (create/update/delete), agent API key management, cron toggle/trigger, skill upsert/delete, task delete, connection disconnect, and read-only gateway/models/capabilities/token-cost endpoints (49 → 66 tools total).
+- Heartbeat-based task-polling mechanism for local agent coordination.
+- Kanban board: column reorder and hide/show with localStorage persistence.
 
 ### Changed
 - Migrated to Tailwind CSS v4 (#768) — config converted to CSS `@theme`, `@tailwindcss/postcss`, `@custom-variant dark`. Visual QA verified across login, dashboard, task board, onboarding, and all 11 themes including the light Paper theme.
+- Aegis hardened to require machine-checkable signals before auto-approval.
+- Normalized on `MISSION_CONTROL_URL` (default port 3000 → 3001) across coordinator scripts and docs.
 
 ### Fixed
 - Model catalog: `costPer1k` renamed to `costPerMTok` (the field held per-million values), `classifyDirectModel` now derives from the catalog instead of a parallel hard-coded list, and all prices re-verified against provider docs (#769, supersedes #751). Fixed two real billing-estimate undercounts — Kimi K2.5 and MiniMax M2.1 output rates.
+- Security: path traversal in `sessions/continue` — session ID now validated and constrained to `projectsRoot`.
+- MCP stdio transport: fixed a hang on stdin drain at process close.
+- `mc_delete_skill` MCP tool now sends the required confirmation body instead of query params, matching the skill-delete route contract.
 
 ---
 

@@ -53,3 +53,7 @@ docs/_*.png
 
 # IDE state
 .vs/
+
+# Claude Code agent scratch (local planning docs, review logs)
+docs/superpowers/
+.devils-advocate/

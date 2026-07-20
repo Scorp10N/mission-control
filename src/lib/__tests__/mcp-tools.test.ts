@@ -61,7 +61,9 @@ describe('buildMcpTools — role scoping', () => {
     expect(adminTools).toContain('mc_create_agent_key')
     expect(adminTools).toContain('mc_revoke_agent_key')
     expect(adminTools).toContain('mc_manage_cron')
+    expect(adminTools).toContain('mc_list_cron')
     // Operator must NOT have admin-only tools
+    expect(operatorTools.has('mc_list_cron')).toBe(false)
     expect(operatorTools.has('mc_delete_agent')).toBe(false)
     expect(operatorTools.has('mc_manage_cron')).toBe(false)
   })

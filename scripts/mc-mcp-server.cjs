@@ -752,9 +752,9 @@ const TOOLS = [
   // --- Cron ---
   {
     name: 'mc_list_cron',
-    description: 'List all cron jobs',
+    description: 'List all cron jobs (requires admin)',
     inputSchema: { type: 'object', properties: {}, required: [] },
-    handler: async () => api('GET', '/api/cron'),
+    handler: async () => api('GET', '/api/cron?action=list'),
   },
   {
     name: 'mc_manage_cron',

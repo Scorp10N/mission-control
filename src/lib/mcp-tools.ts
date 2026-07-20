@@ -243,11 +243,6 @@ export function buildMcpTools(
       text(await mc('GET', `/api/skills?mode=content&source=${encodeURIComponent(source)}&name=${encodeURIComponent(name)}`))
   )
 
-  // Cron (read)
-  server.tool('mc_list_cron', {},
-    async () => text(await mc('GET', '/api/cron'))
-  )
-
   // System status (read)
   server.tool('mc_health', {},
     async () => text(await mc('GET', '/api/status?action=health'))
@@ -536,6 +531,10 @@ export function buildMcpTools(
         mode: z.enum(['due', 'force']).optional(),
       },
       async (args) => text(await mc('POST', '/api/cron', args))
+    )
+
+    server.tool('mc_list_cron', {},
+      async () => text(await mc('GET', '/api/cron?action=list'))
     )
 
   } // end admin

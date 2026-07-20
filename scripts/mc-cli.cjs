@@ -557,7 +557,7 @@ const commands = {
   },
 
   cron: {
-    list: () => ({ method: 'GET', route: '/api/cron' }),
+    list: () => ({ method: 'GET', route: '/api/cron?action=list' }),
     create: (flags) => ({ method: 'POST', route: '/api/cron', body: bodyFromFlags(flags) || {} }),
     update: (flags) => ({ method: 'POST', route: '/api/cron', body: bodyFromFlags(flags) || {} }),
     pause: (flags) => ({ method: 'POST', route: '/api/cron', body: bodyFromFlags(flags) || {} }),

@@ -57,3 +57,6 @@ docs/_*.png
 # Claude Code agent scratch (local planning docs, review logs)
 docs/superpowers/
 .devils-advocate/
+
+# CodeGraph local index (machine-specific, regenerable)
+.codegraph/

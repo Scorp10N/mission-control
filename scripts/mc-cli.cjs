@@ -11,6 +11,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const { normalizeMissionControlBaseUrl } = require('./mc-base-url.cjs');
 
 const EXIT = {
   OK: 0,
@@ -134,10 +135,6 @@ function saveProfile(profile) {
   fs.writeFileSync(p, `${JSON.stringify(profile, null, 2)}\n`, 'utf8');
 }
 
-function normalizeBaseUrl(url) {
-  return String(url || '').replace(/\/+$/, '');
-}
-
 function mapStatusToExit(status) {
   if (status === 401) return EXIT.AUTH;
   if (status === 403) return EXIT.FORBIDDEN;
@@ -175,7 +172,7 @@ async function httpRequest({ baseUrl, apiKey, cookie, method, route, body, timeo
     headers['Content-Type'] = 'application/json';
     payload = JSON.stringify(body);
   }
-  const url = `${normalizeBaseUrl(baseUrl)}${route.startsWith('/') ? route : `/${route}`}`;
+  const url = `${baseUrl}${route.startsWith('/') ? route : `/${route}`}`;
 
   try {
     const res = await fetch(url, {
@@ -213,7 +210,7 @@ async function sseStream({ baseUrl, apiKey, cookie, route, timeoutMs, onEvent, o
   const headers = { Accept: 'text/event-stream' };
   if (apiKey) headers['x-api-key'] = apiKey;
   if (cookie) headers['Cookie'] = cookie;
-  const url = `${normalizeBaseUrl(baseUrl)}${route}`;
+  const url = `${baseUrl}${route}`;
 
   const controller = new AbortController();
   let timer;
@@ -671,7 +668,7 @@ async function run() {
   const asJson = Boolean(parsed.flags.json);
   const profileName = String(parsed.flags.profile || 'default');
   const profile = loadProfile(profileName);
-  const baseUrl = parsed.flags.url ? String(parsed.flags.url) : profile.url;
+  const baseUrlInput = parsed.flags.url ? String(parsed.flags.url) : profile.url;
   const apiKey = parsed.flags['api-key'] ? String(parsed.flags['api-key']) : profile.apiKey;
   const timeoutMs = Number(parsed.flags['timeout-ms'] || 20000);
 
@@ -680,9 +677,9 @@ async function run() {
   // For compound subcommands like: agents memory get / tasks comments add
   const sub = parsed._[2];
 
-  const ctx = { baseUrl, apiKey, profile, timeoutMs, asJson };
-
   try {
+    const baseUrl = normalizeMissionControlBaseUrl(baseUrlInput);
+    const ctx = { baseUrl, apiKey, profile, timeoutMs, asJson };
     // Raw passthrough
     if (group === 'raw') {
       const method = String(required(parsed.flags, 'method')).toUpperCase();

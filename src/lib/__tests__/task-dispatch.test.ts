@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import Database from 'better-sqlite3'
-import { resolveTaskDispatchModelOverride, buildPolicyRequestFromTask, insertDispatchTokenUsage } from '@/lib/task-dispatch'
+import { resolveTaskDispatchModelOverride, buildPolicyRequestFromTask, insertDispatchTokenUsage, pickProvider } from '@/lib/task-dispatch'
 
 describe('insertDispatchTokenUsage', () => {
   it('persists dispatch usage using the current token_usage schema', () => {
@@ -93,5 +93,12 @@ describe('buildPolicyRequestFromTask', () => {
       [],
     )
     expect(req.metadata).toEqual(meta)
+  })
+})
+
+describe('MiniMax direct dispatch routing', () => {
+  it('selects the dedicated provider for both current model IDs', () => {
+    expect(pickProvider('MiniMax-M3')).toBe('minimax')
+    expect(pickProvider('minimax/MiniMax-M2.7')).toBe('minimax')
   })
 })

@@ -248,9 +248,24 @@ export const updateSettingsSchema = z.object({
   settings: z.record(z.string(), z.unknown()),
 })
 
+const gatewayConfigPathSchema = z.string().min(1).max(500).refine(
+  (path) => path.split('.').every(
+    (segment) => segment.length > 0 && !['__proto__', 'prototype', 'constructor'].includes(segment),
+  ),
+  'Config path contains an unsafe segment',
+)
+
 export const gatewayConfigUpdateSchema = z.object({
-  updates: z.record(z.string(), z.unknown()),
+  updates: z.record(gatewayConfigPathSchema, z.unknown()).refine(
+    (updates) => Object.keys(updates).length > 0 && Object.keys(updates).length <= 100,
+    'Updates must contain between 1 and 100 fields',
+  ),
   hash: z.string().optional(),
+})
+
+export const gatewayControlSchema = z.object({
+  gateway: z.enum(['hermes', 'openclaw']),
+  action: z.enum(['start', 'stop', 'restart', 'diagnose']),
 })
 
 export const qualityReviewSchema = z.object({
@@ -330,6 +345,13 @@ export const skillDeleteSchema = z.object({
   source: skillIdentifierSchema,
   name: skillIdentifierSchema,
   confirmation: z.literal('delete_skill'),
+}).strict()
+
+export const backupDeleteSchema = z.object({
+  name: z.string().trim().min(1).max(255).endsWith('.db').refine(
+    (name) => !name.includes('..') && !name.includes('/') && !name.includes('\\'),
+    'Invalid backup name',
+  ),
 }).strict()
 
 export const accessRequestActionSchema = z.object({

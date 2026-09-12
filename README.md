@@ -7,11 +7,15 @@ Self-hosted control plane for operating AI agents.
 Dispatch tasks, inspect runs, review failures, track spend, and coordinate agent runtimes
 from one local dashboard backed by SQLite.
 
+An open-source project by [Builderz Labs](https://builderz.dev), created and maintained by [nyk](https://nyk.dev).
+It works with OpenClaw, Claude Code, Codex, and other runtimes - it is not part of any one of them.
+
 [![Quality Gate](https://github.com/builderz-labs/mission-control/actions/workflows/quality-gate.yml/badge.svg)](https://github.com/builderz-labs/mission-control/actions/workflows/quality-gate.yml)
 [![Release](https://img.shields.io/github/v/release/builderz-labs/mission-control)](https://github.com/builderz-labs/mission-control/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Sponsor](https://img.shields.io/github/sponsors/builderz-labs?label=Sponsor)](https://github.com/sponsors/builderz-labs)
 
-![Mission Control dashboard](docs/mission-control-overview.png)
+<img src="docs/mission-control-overview.png" alt="Mission Control overview dashboard with active sessions, live activity, fleet status per runtime, and the task pipeline" width="900">
 
 </div>
 
@@ -90,7 +94,7 @@ Dashboards compress a sequence into current state. When a run needs review, reco
 identity, task, tool call, approval, result, and verification evidence before changing it.
 Keep unresolved items distinct from accepted risk.
 
-![Mission Control operator field notes](docs/operator-field-notes.png)
+![Mission Control operator field notes](docs/operator-field-notes.webp)
 
 Logs show what ran. A completion receipt or inspected artifact shows what finished.
 
@@ -172,14 +176,14 @@ the interactive reference at `/docs` and the OpenAPI JSON at `/api/docs`.
 The task board tracks work through inbox, assignment, execution, review, quality review,
 and completion. Aegis review requires an approval record before a task reaches done.
 
-![Mission Control task board](docs/mission-control-tasks.png)
+![Mission Control task board with assigned, in-progress, and review columns of agent tasks](docs/mission-control-tasks.png)
 
 ### Agents and runtimes
 
 Agent views combine registration state, heartbeats, sessions, configuration, local runtime
 discovery, and workspace files.
 
-![Mission Control agents panel](docs/mission-control-agents.png)
+![Mission Control agents panel showing a five-agent squad with roles, heartbeats, and workspace conventions](docs/mission-control-agents.png)
 
 ### Memory and skills
 
@@ -187,31 +191,32 @@ The memory browser and relationship graph inspect filesystem-backed memory and l
 session knowledge. The Skills Hub discovers local skill roots and scans registry content
 before installation.
 
-![Mission Control memory graph](docs/mission-control-memory-graph.png)
+![Mission Control memory browser rendering a markdown agent note with wiki-style links between memory files](docs/mission-control-memory.png)
 
 ### Schedules and activity
 
 Recurring task templates create dated work on a cron schedule. The activity stream combines
 agent, task, and system events for operator review.
 
-![Mission Control recurring tasks](docs/mission-control-cron.png)
+![Mission Control cron management calendar with scheduled jobs across the week](docs/mission-control-cron.png)
 
-![Mission Control activity stream](docs/mission-control-activity.png)
+![Mission Control activity stream with per-agent status and heartbeat events](docs/mission-control-activity.png)
 
 ## Documentation
 
-| Guide | What You'll Learn |
-|-------|-------------------|
-| [Quickstart](docs/quickstart.md) | Register an agent, create a task, complete it — 5 minutes |
-| [Agent Setup](docs/agent-setup.md) | SOUL personalities, config, heartbeats, agent sources |
-| [Orchestration](docs/orchestration.md) | Multi-agent workflows, auto-dispatch, quality review gates |
-| [CLI Reference](docs/cli-agent-control.md) | Full CLI command list for headless/scripted usage |
-| [CLI Integration](docs/cli-integration.md) | Connect Claude Code, Codex, or any CLI tool directly |
+| Guide | Use it for |
+|---|---|
+| [Quickstart](docs/quickstart.md) | Register an agent and run the first task loop |
+| [Agent setup](docs/agent-setup.md) | Sources, identities, SOUL files, and heartbeats |
+| [Orchestration](docs/orchestration.md) | Dispatch, handoffs, workflows, and review gates |
+| [CLI and MCP](docs/cli-agent-control.md) | Headless commands and agent tools |
+| [CLI integration](docs/cli-integration.md) | Claude Code, Codex, and gateway-free connections |
 | [Agent Coordination](docs/agent-coordination.md) | Shared task, comment, comms, and MCP workflow for local agents |
-| [Deployment](docs/deployment.md) | Production deployment, reverse proxy, VPS setup |
-| [Security Hardening](docs/SECURITY-HARDENING.md) | Docker hardening, CSP, network isolation |
-| [OpenClaw Compatibility](docs/openclaw-config-compatibility.md) | Config and state-directory behavior |
-| [Release Process](RELEASE.md) | SemVer policy, branch strategy, tag/release checklist |
+| [Deployment](docs/deployment.md) | Local, Docker, standalone, reverse proxy, and VPS setup |
+| [Security hardening](docs/SECURITY-HARDENING.md) | Network, container, CSP, and secret controls |
+| [Support](SUPPORT.md) | Questions, bugs, feature proposals, and security-report routing |
+| [OpenClaw compatibility](docs/openclaw-config-compatibility.md) | Config and state-directory behavior |
+| [Release process](RELEASE.md) | Versioning, tags, images, and release checks |
 | [API Reference](openapi.json) | OpenAPI 3.1 spec — 101 REST endpoints with Scalar UI at `/docs` and OpenAPI JSON at `/api/docs` |
 
 ### Gateway Optional Mode
@@ -384,6 +389,7 @@ the project does not promise dates for unassigned work.
 - Bugs and feature proposals: [GitHub Issues](https://github.com/builderz-labs/mission-control/issues)
 - Vulnerabilities: [private reporting instructions](SECURITY.md)
 - Builderz Labs: [builderz.dev](https://builderz.dev)
+- Maintained by [Nyk](https://nyk.dev). Sponsor [Nyk](https://github.com/sponsors/0xNyk) or [Builderz Labs](https://github.com/sponsors/builderz-labs). Follow [@nykdotdev](https://x.com/nykdotdev).
 
 <p align="center">
   <picture>

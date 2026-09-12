@@ -81,7 +81,10 @@ export interface ModelConfig {
   provider: string
   description: string
   /** USD per MILLION tokens (input/output) — mirrors ModelConfig in '@/lib/models' */
-  costPerMTok: { input: number; output: number }
+  costPerMTok: { input: number; output: number; cacheRead?: number; cacheWrite?: number | null }
+  contextWindow?: number
+  inputModalities?: Array<'text' | 'image' | 'video'>
+  thinking?: Array<'adaptive' | 'disabled' | 'always_on'>
 }
 
 // Mission Control Phase 2 Types
@@ -119,6 +122,8 @@ export interface Agent {
   name: string
   role: string
   session_key?: string
+  /** 'claude' opts into per-agent Claude Code session dispatch (#602). */
+  runtime_type?: string | null
   soul_content?: string
   status: 'offline' | 'idle' | 'busy' | 'error'
   last_seen?: number

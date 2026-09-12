@@ -1,4 +1,4 @@
-FROM node:24.18.0-slim AS base
+FROM node:24.18.0-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS base
 # Pin pnpm to v10 to match CI and package.json#packageManager. pnpm 11 turns
 # ERR_PNPM_IGNORED_BUILDS into a hard error, breaking fresh Docker builds.
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
@@ -7,6 +7,7 @@ WORKDIR /app
 FROM base AS deps
 # Copy only dependency manifests first for better layer caching
 COPY package.json ./
+COPY pnpm-workspace.yaml ./
 COPY pnpm-lock.yaml* ./
 # better-sqlite3 requires native compilation tools
 RUN apt-get update && apt-get install -y python3 make g++ --no-install-recommends && rm -rf /var/lib/apt/lists/*
@@ -49,7 +50,7 @@ ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
 
 RUN pnpm build
 
-FROM node:24.18.0-slim AS runtime
+FROM node:24.18.0-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS runtime
 
 ARG MC_VERSION=dev
 LABEL org.opencontainers.image.source="https://github.com/builderz-labs/mission-control"
@@ -74,7 +75,9 @@ COPY --from=deps /app/node_modules/.pnpm/node-pty@1.1.0/node_modules/node-pty ./
 RUN mkdir -p .data && chown nextjs:nodejs .data
 RUN echo 'const http=require("http");const r=http.get("http://localhost:"+(process.env.PORT||3000)+"/api/status?action=health",s=>{process.exit(s.statusCode===200?0:1)});r.on("error",()=>process.exit(1));r.setTimeout(4000,()=>{r.destroy();process.exit(1)})' > /app/healthcheck.js
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+COPY scripts/load-env.sh /app/scripts/load-env.sh
 RUN chmod 755 /app/docker-entrypoint.sh && \
+    chmod 644 /app/scripts/load-env.sh && \
     chmod -R a+rX /app/public/ /app/src/
 USER nextjs
 ENV PORT=3000

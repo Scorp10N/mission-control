@@ -85,7 +85,7 @@ async function resolveClaudeSessionCwd(sessionId: string): Promise<string | null
         await handle.close()
       }
     } catch {
-      return null
+      continue
     }
     for (const line of head.split('\n')) {
       const trimmed = line.trim()

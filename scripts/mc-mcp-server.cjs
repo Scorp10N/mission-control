@@ -15,6 +15,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const { normalizeMissionControlBaseUrl } = require('./mc-base-url.cjs');
 
 // ---------------------------------------------------------------------------
 // Config
@@ -29,7 +30,9 @@ function loadConfig() {
   } catch { /* no profile */ }
 
   return {
-    baseUrl: (process.env.MISSION_CONTROL_URL || process.env.MC_URL || profile.url || 'http://localhost:3001').replace(/\/+$/, ''),
+    baseUrl: normalizeMissionControlBaseUrl(
+      process.env.MISSION_CONTROL_URL || process.env.MC_URL || profile.url || 'http://localhost:3001'
+    ),
     apiKey: process.env.MC_API_KEY || profile.apiKey || '',
     cookie: process.env.MC_COOKIE || profile.cookie || '',
   };
@@ -942,7 +945,7 @@ for (const tool of TOOLS) {
 
 const SERVER_INFO = {
   name: 'mission-control',
-  version: '2.0.1',
+  version: '2.3.0',
 };
 
 const CAPABILITIES = {

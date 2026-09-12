@@ -17,17 +17,21 @@ const mockServerConnect = vi.fn()
 const mockServerClose = vi.fn()
 
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
-  McpServer: vi.fn(() => ({
-    connect: mockServerConnect,
-    close: mockServerClose,
-  })),
+  McpServer: vi.fn(function () {
+    return {
+      connect: mockServerConnect,
+      close: mockServerClose,
+    }
+  }),
 }))
 
 vi.mock('@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js', () => ({
-  WebStandardStreamableHTTPServerTransport: vi.fn(() => ({
-    handleRequest: mockTransportHandleRequest,
-    close: mockTransportClose,
-  })),
+  WebStandardStreamableHTTPServerTransport: vi.fn(function () {
+    return {
+      handleRequest: mockTransportHandleRequest,
+      close: mockTransportClose,
+    }
+  }),
 }))
 
 import { POST, GET } from '@/app/api/mcp/route'
